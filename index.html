@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Payment Snap Reader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: left intake column (drop zone + queue), right result column; stacks on phones */
+:root{
+  --bg:#eef1f4; --panel:#ffffff; --ink:#15212e; --muted:#5d6b7a; --line:#d5dce4;
+  --accent:#1f5fae; --accent-ink:#ffffff; --ok:#1d7a4c; --warn:#a86a0b; --bad:#b3322c; --soft:#e4ecf6;
+  --f-display:"Manrope",system-ui,sans-serif; --f-body:"Manrope",system-ui,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f151c; --panel:#17202a; --ink:#e3e9ef; --muted:#93a1b0; --line:#2a3542;
+  --accent:#6ea6ec; --accent-ink:#0b1420; --ok:#5cc38e; --warn:#e0a84a; --bad:#ec7b73; --soft:#1d2a3a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f151c; --panel:#17202a; --ink:#e3e9ef; --muted:#93a1b0; --line:#2a3542;
+  --accent:#6ea6ec; --accent-ink:#0b1420; --ok:#5cc38e; --warn:#e0a84a; --bad:#ec7b73; --soft:#1d2a3a; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;padding-inline:16px;padding-block:24px 48px}
+.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header h1{font-family:var(--f-display);font-weight:800;font-size:clamp(22px,3vw,28px);margin:0;letter-spacing:-.01em;text-wrap:balance}
+header p{margin:4px 0 0;color:var(--muted);max-width:65ch}
+.grid{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:820px){.grid{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.drop{border:2px dashed var(--line);border-radius:8px;padding:24px 14px;text-align:center;cursor:pointer;display:flex;flex-direction:column;gap:6px;align-items:center;transition:border-color .15s,background .15s}
+.drop:hover,.drop.over,.drop:focus-visible{border-color:var(--accent);background:var(--soft);outline:none}
+.drop strong{font-size:16px}
+.drop span{color:var(--muted);font-size:13px}
+button{font:inherit;font-weight:700;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 14px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.queue{display:flex;flex-direction:column;gap:8px;list-style:none;margin:0;padding:0}
+.qi{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:10px;align-items:center;padding:6px;border-radius:8px;border:1px solid transparent;cursor:pointer}
+.qi:hover{border-color:var(--line)}
+.qi.sel{border-color:var(--accent);background:var(--soft)}
+.qi img{width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
+.qi .nm{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qi .sub{font-size:12px;color:var(--muted);font-family:var(--f-mono)}
+.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+.pill.done{color:var(--ok)} .pill.wait{color:var(--muted)} .pill.run{color:var(--warn)} .pill.err{color:var(--bad)}
+.note{font-size:13px;color:var(--muted)}
+.note.err{color:var(--bad)}
+.fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+@media (max-width:560px){.fields{grid-template-columns:minmax(0,1fr)}}
+.f{background:var(--panel);padding:8px 12px;min-width:0}
+.f .k{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.f .v{font-family:var(--f-mono);font-size:14px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.f .v.empty{color:var(--muted)}
+.f.hl .v{font-weight:500;color:var(--accent)}
+textarea{width:100%;min-height:220px;font-family:var(--f-mono);font-size:13px;line-height:1.55;border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--bg);color:var(--ink);resize:vertical}
+.tag{display:inline-block;font-size:11px;font-weight:700;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:1px 6px;margin-left:8px;vertical-align:middle}
+.status{min-height:1.4em}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
+.tabs button{border:none;border-bottom:2px solid transparent;border-radius:0;background:none;padding:6px 10px;color:var(--muted)}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+[hidden]{display:none!important}
+body{margin:0}
+.f.wide{grid-column:1/-1}
+.stack{display:flex;flex-direction:column;gap:14px}
+.qi{grid-template-columns:48px minmax(0,1fr) auto auto}
+.qi .x{border:none;background:none;color:var(--muted);font-size:20px;line-height:1;padding:4px 8px;border-radius:6px}
+.qi .x:hover{color:var(--bad);background:var(--bg)}
+.f{display:flex;flex-direction:column;gap:2px}
+.f input.v{border:1px solid transparent;border-radius:4px;background:transparent;color:var(--ink);padding:2px 4px;margin:0 -4px;width:calc(100% + 8px);font-family:var(--f-mono);font-size:14px}
+.f input.v:hover{border-color:var(--line)}
+.f input.v:focus{outline:none;border-color:var(--accent);background:var(--bg)}
+.f.hl input.v{color:var(--accent);font-weight:500}
+.f.miss{background:color-mix(in srgb,var(--warn) 12%,var(--panel))}
+.f.note-f{grid-column:1/-1}
+.f.note-f .v{color:var(--warn);font-size:13px}
+.empty-state{grid-column:1/-1;color:var(--muted);padding:28px 16px;text-align:center}
+details summary{cursor:pointer}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--f-mono);font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;max-height:240px;overflow:auto;margin:8px 0 0}
+.tablewrap{overflow:auto;max-height:420px;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;font-size:13px;min-width:100%}
+th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap;font-variant-numeric:tabular-nums}
+th{position:sticky;top:0;background:var(--soft);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+td{font-family:var(--f-mono)}
+td.hl{color:var(--accent)}
+td.nt{color:var(--warn);white-space:normal;min-width:460px;font-family:var(--f-body)}
+tbody tr,tr[data-id]{cursor:pointer}
+tr[data-id]:hover td{background:var(--bg)}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Payment Snap Reader</h1>
+    <p>Drop payment screenshots from any bank or UPI app. The page reads the text on your computer and fills in the details. Check the highlighted fields, fix anything if needed, then download Excel or copy the text.</p>
+  </header>
+
+  <div class="grid">
+    <section class="panel" aria-label="Upload">
+      <div class="label">Screenshots</div>
+      <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose or drop screenshots">
+        <strong>Drop images here</strong>
+        <span>or click to choose · or paste with Ctrl+V</span>
+        <span>JPG, PNG, WebP · several at once is fine</span>
+      </div>
+      <input type="file" id="file" accept="image/*" multiple hidden>
+      <div class="row">
+        <button class="primary" id="xlsBtn" disabled>Download Excel</button>
+        <button id="readBtn" hidden>Retry failed</button>
+        <button id="clearBtn" disabled>Remove all</button>
+      </div>
+      <div class="status note" id="status"></div>
+      <ul class="queue" id="queue"></ul>
+    </section>
+
+    <section class="panel" aria-label="Result">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tabOne" aria-selected="true">Selected snap</button>
+        <button role="tab" id="tabAll" aria-selected="false">All snaps <span id="allCount"></span></button>
+      </div>
+      <div id="viewOne" class="stack">
+        <div class="label" id="resTitle">Extracted details</div>
+        <div class="fields" id="fields"></div>
+        <details id="rawBox"><summary class="label">Text read from the image</summary><pre id="raw"></pre></details>
+      </div>
+      <div id="viewAll" class="stack" hidden>
+        <div class="tablewrap"><table id="allTable"></table></div>
+      </div>
+      <div class="label" id="txtLabel">Text output</div>
+      <textarea id="txt" spellcheck="false" aria-label="Text output" readonly></textarea>
+      <div class="row">
+        <button id="copyBtn">Copy text</button>
+        <button id="dlBtn">Download .txt</button>
+        <span class="note" id="actNote"></span>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+/* ---- Payment text parser (pattern based, runs in the browser) ---- */
+const HANDLE_BANK = {
+  icici:"ICICI", okicici:"ICICI", ibl:"ICICI", hdfcbank:"HDFC", okhdfcbank:"HDFC", pthdfc:"HDFC", hdfc:"HDFC",
+  sbi:"SBI", oksbi:"SBI", ptsbi:"SBI", axisbank:"Axis", okaxis:"Axis", axl:"Axis", ptaxis:"Axis", axis:"Axis",
+  ybl:"Yes Bank", yesbank:"Yes Bank", ptyes:"Yes Bank", yesbankltd:"Yes Bank", kotak:"Kotak", kmbl:"Kotak",
+  paytm:"Paytm Payments Bank", pnb:"PNB", boi:"Bank of India", barodampay:"Bank of Baroda",
+  unionbank:"Union Bank", uboi:"Union Bank", cnrb:"Canara Bank", idbi:"IDBI", idfcbank:"IDFC First", idfcfirst:"IDFC First",
+  indus:"IndusInd", federal:"Federal Bank", fbl:"Federal Bank", rbl:"RBL", aubank:"AU Small Finance", jupiteraxis:"Axis",
+  freecharge:"Axis", apl:"Axis", yapl:"Yes Bank", ikwik:"Mobikwik", airtel:"Airtel Payments Bank", fam:"IDFC First", naviaxis:"Axis"
+};
+const BANKS = ["State Bank of India","Punjab National Bank","Bank of India","Bank of Baroda","Union Bank of India","Central Bank of India","Indian Overseas Bank","Bank of Maharashtra","HDFC Bank","ICICI Bank","Axis Bank","Kotak Mahindra Bank","Canara Bank","IDBI Bank","IDFC First Bank","Yes Bank","IndusInd Bank","Federal Bank","RBL Bank","AU Small Finance Bank","Indian Bank","UCO Bank","Saraswat Bank","Cosmos Bank","Paytm Payments Bank","Airtel Payments Bank","Karnataka Bank","South Indian Bank","DBS Bank","Standard Chartered","Citibank","HSBC","Equitas","Ujjivan","Jana Small Finance","SBI","HDFC","ICICI","PNB","Kotak","IDFC"];
+// First 4 letters of an IFSC code / NEFT-RTGS UTR = the bank
+const IFSC_BANK = {SBIN:"State Bank of India",HDFC:"HDFC Bank",ICIC:"ICICI Bank",UTIB:"Axis Bank",PUNB:"Punjab National Bank",BKID:"Bank of India",
+  BARB:"Bank of Baroda",CNRB:"Canara Bank",UBIN:"Union Bank of India",KKBK:"Kotak Mahindra Bank",IDIB:"Indian Bank",IOBA:"Indian Overseas Bank",
+  CBIN:"Central Bank of India",YESB:"Yes Bank",INDB:"IndusInd Bank",FDRL:"Federal Bank",RATN:"RBL Bank",IDFB:"IDFC First Bank",AUBL:"AU Small Finance Bank",
+  UCBA:"UCO Bank",MAHB:"Bank of Maharashtra",PYTM:"Paytm Payments Bank",AIRP:"Airtel Payments Bank",KARB:"Karnataka Bank",SIBL:"South Indian Bank",
+  DBSS:"DBS Bank",SCBL:"Standard Chartered",CITI:"Citibank",HSBC:"HSBC",IBKL:"IDBI Bank",ESFB:"Equitas Small Finance Bank",UJVN:"Ujjivan Small Finance Bank",
+  JSFB:"Jana Small Finance Bank",SRCB:"Saraswat Bank",COSB:"Cosmos Bank",KVBL:"Karur Vysya Bank",TMBL:"Tamilnad Mercantile Bank",CIUB:"City Union Bank",
+  DLXB:"Dhanlaxmi Bank",JAKA:"J&K Bank",PSIB:"Punjab & Sind Bank",BDBL:"Bandhan Bank",CSBK:"CSB Bank",NTBL:"Nainital Bank",FINO:"Fino Payments Bank",
+  IPOS:"India Post Payments Bank",ABHY:"Abhyudaya Bank",SVCB:"SVC Bank",APGB:"Andhra Pragathi Grameena Bank",SUTB:"Suryoday Small Finance Bank",
+  UTKS:"Utkarsh Small Finance Bank",NESF:"North East Small Finance Bank",ESMF:"ESAF Small Finance Bank",DEUT:"Deutsche Bank",BOFA:"Bank of America"};
+const MONTHS = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,sept:9,oct:10,nov:11,dec:12};
+const MON_RE = "(?:jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*";
+
+function wordsToNumber(w){
+  const u = {zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fourty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
+  const scale = {thousand:1000,lakh:100000,lakhs:100000,lac:100000,crore:10000000,crores:10000000};
+  const parts = w.toLowerCase().replace(/rupees?|only|rs\.?|inr/g," ").split(/\band\b(?=[^]*paise)|paise/);
+  const conv = s => { let total=0, cur=0, hit=false;
+    for (const t of s.split(/[\s-]+/).filter(Boolean)){
+      if (t in u){ cur += u[t]; hit=true; }
+      else if (t==="hundred"){ cur = (cur||1)*100; hit=true; }
+      else if (t in scale){ total += (cur||1)*scale[t]; cur=0; hit=true; }
+    } return hit ? total+cur : null; };
+  const r = conv(parts[0]||""); if (r==null) return null;
+  return r + ((parts.length>1 ? conv(parts[1]) : 0)||0)/100;
+}
+function to24(t){
+  const m = t.match(/(\d{1,2})[:.](\d{2})(?::\d{2})?\s*([AaPp])?\.?\s*[Mm]?/); if(!m) return "";
+  let h=+m[1]; const ap=(m[3]||"").toLowerCase();
+  if (ap==="p" && h<12) h+=12; if (ap==="a" && h===12) h=0;
+  return String(h).padStart(2,"0")+":"+m[2];
+}
+function normDate(t, year){
+  let m; const pad=n=>String(n).padStart(2,"0"); const fy=y=> y ? (String(y).length===2 ? "20"+y : y) : year;
+  const mon = s => MONTHS[s.slice(0,4).toLowerCase()] || MONTHS[s.slice(0,3).toLowerCase()];
+  if ((m = t.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/))) return pad(m[1])+"/"+pad(m[2])+"/"+fy(m[3]);
+  if ((m = t.match(/\b(\d{4})-(\d{2})-(\d{2})\b/))) return m[3]+"/"+m[2]+"/"+m[1];
+  if ((m = t.match(new RegExp("\\b(\\d{1,2})(?:st|nd|rd|th)?[\\s-]*("+MON_RE+")\\.?,?[\\s-]*(\\d{4}|\\d{2}(?![:.\\d]))?","i")))) return pad(m[1])+"/"+pad(mon(m[2]))+"/"+fy(m[3]);
+  if ((m = t.match(new RegExp("\\b("+MON_RE+")\\.?\\s+(\\d{1,2}),?\\s*(\\d{4})?","i")))) return pad(m[2])+"/"+pad(mon(m[1]))+"/"+fy(m[3]);
+  return "";
+}
+// A person/business name out of a noisy line: keep leading words, drop icons, emoji junk and amounts
+function nameFrom(line){
+  if (!line) return "";
+  const l = line.replace(/^\W*(paid\s*to|sent\s*to|credited\s*to|received\s*from|payment\s*from|debited\s*from|paid\s*by|to|from|payee|beneficiary|receiver|sender|payer)\b\s*:?/i,"");
+  const out = [];
+  for (const tok of l.split(/\s+/)){
+    const t = tok.replace(/[.,:;]+$/,"");
+    if (/^[A-Za-z][A-Za-z'&.-]*$/.test(t) && (t.length>1 || /^[A-Z]$/.test(t))) out.push(t);
+    else if (out.length) break;
+  }
+  const n = out.join(" ").replace(/\.{2,}$/,"").trim();
+  if (!n || /^(upi|id|on|via|pay|google|phonepe|paytm|bank|transaction|successful|completed|payment|details)$/i.test(n)) return "";
+  if (/\b(transaction|details|successful|history|support|google pay)\b/i.test(n)) return "";
+  return n;
+}
+function fixUpi(u){
+  let [id, h=""] = u.split("@");
+  id = id.replace(/^[eoc•·*.\s]{3,}(?=\d)/i, "XXXX");
+  h = h.replace(/[I1|]$/,"l").toLowerCase().replace(/^okshi$/,"oksbi").replace(/^ybli$/,"ybl");
+  if (!(h in HANDLE_BANK) && h.length>=2){ const ks = Object.keys(HANDLE_BANK).filter(k=>k.startsWith(h)); if (ks.length===1) h = ks[0]; }
+  return id + "@" + h;
+}
+const validGroup = s => /^\d{1,3}(,\d{2})*,\d{3}(\.\d{1,2})?$/.test(s) || /^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(s);
+
+function findAmount(lines, notes){
+  // Tesseract has no ₹ glyph: it usually reads it as 2, %, 7, z or F in front of the number, or drops it.
+  const skip = /up\s*to|upto|limit|cashback|reward|offer|balance|\bKB\/s|%\s*$/i;
+  const cands = [];
+  lines.forEach((l, i)=>{
+    if (skip.test(l)) return;
+    const standalone = /^[\W₹%zZF]*[\d,]+(\.\d{1,2})?\s*$/.test(l);
+    for (const m of l.matchAll(/(?:^|\s)([₹%zZF<]?)(\d[\d,]*(?:\.\d{1,2})?)(?=\s|$)/g)){
+      const pre = m[1], num = m[2];
+      const hasGroup = num.includes(",") || /\.\d{2}$/.test(num);
+      if (!hasGroup && !standalone && !pre) continue;
+      if (!hasGroup && (num.length > 7 || /^0/.test(num))) continue;
+      if (num.includes(",") && !validGroup(num) && !validGroup(num.slice(1))) continue;
+      cands.push({num, pre, i});
+    }
+  });
+  if (!cands.length) return "";
+  const plain = new Set(cands.map(c=>c.num));
+  const vals = cands.map(c=>{
+    let v = c.num, guessed = false;
+    if (!c.pre && /^2/.test(v)){
+      const alt = v.slice(1);
+      const altOk = v.includes(",") ? validGroup(alt) : alt.length>=1 && !/^0/.test(alt);
+      const fullOk = v.includes(",") ? validGroup(v) : true;
+      if (altOk) { v = alt; guessed = !plain.has(alt); }
+    }
+    return {v: v.replace(/,/g,""), guessed, raw: c.pre + c.num};
+  });
+  const count = {}; vals.forEach(o=>count[o.v]=(count[o.v]||0)+1);
+  const best = vals.slice().sort((a,b)=>count[b.v]-count[a.v])[0];
+  if (best.guessed) notes["Check amount"] = `Read as "${best.raw}" — the ₹ sign is often read as a digit. Verify.`;
+  const n = parseFloat(best.v);
+  return isNaN(n) ? "" : n.toFixed(2);
+}
+
+function valueAfterLabel(lines, labelRe, valueRe){
+  for (let i=0;i<lines.length;i++){
+    const m = lines[i].match(labelRe); if (!m) continue;
+    const rest = lines[i].slice(m.index + m[0].length).replace(/^\s*[:#-]?\s*/,"");
+    const v1 = rest.match(valueRe); if (v1) return v1[0];
+    const v2 = (lines[i+1]||"").match(valueRe); if (v2) return v2[0];
+  }
+  return "";
+}
+
+function parsePayment(raw, year){
+  year = year || new Date().getFullYear();
+  const lines = raw.replace(/\r/g,"").split("\n").map(l=>l.trim()).filter(Boolean);
+  const all = lines.join("\n");
+  const d = {}, notes = {};
+
+  // App / source — explicit labels first
+  d.app_or_source =
+    /PhonePe\s+Transaction\s+ID/i.test(all) ? "PhonePe" :
+    /Google\s+transaction\s+ID/i.test(all) ? "Google Pay" :
+    /paytm|payim|paytin|paylin/i.test(all) ? "Paytm" :
+    /\bpop\b/i.test(all) ? "POP" :
+    /phone\s?pe/i.test(all) ? "PhonePe" : /google\s?pay|\bg\s?pay\b/i.test(all) ? "Google Pay" :
+    /\bbhim\b/i.test(all) ? "BHIM" : /amazon\s?pay/i.test(all) ? "Amazon Pay" : /\bcred\b/i.test(all) ? "CRED" :
+    /mobikwik/i.test(all) ? "MobiKwik" : /yono/i.test(all) ? "SBI YONO" : "";
+
+  // Status
+  const st = all.match(/\b((?:Payment|Transaction|Transfer|Money\s+Sent)\s*(?:was\s+)?(?:Successful(?:ly)?|Success|Completed|Complete|Failed|Pending|Processing|Declined))\b/i);
+  d.status = st ? st[1].replace(/\s+/g," ") : /\bcompleted\b/i.test(all) ? "Completed" : /\bsuccess(ful)?\b/i.test(all) ? "Successful" : /\bfailed\b/i.test(all) ? "Failed" : /\bpending\b/i.test(all) ? "Pending" : "";
+
+  // Amount: words beat digits
+  const w = all.match(/((?:Rupees|INR)\s+[A-Za-z\s-]+?\s+Only)/i) || all.match(/((?:(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|lakhs?|lac|crores?|and)[\s-]+)+Rupees(?:\s+and\s+[A-Za-z\s-]+?Paise)?\s+Only)/i);
+  d.amount_in_words = w ? w[1].replace(/\s+/g," ") : "";
+  const wn = d.amount_in_words ? wordsToNumber(d.amount_in_words) : null;
+  d.amount = wn ? wn.toFixed(2) : findAmount(lines, notes);
+
+  // IDs: Txn / Transaction ID (not "UPI transaction ID") -> transaction_id; UTR / RRN / Ref / UPI transaction ID -> reference_no
+  const ID = /[A-Z0-9]{8,35}/i;
+  d.transaction_id = "";
+  for (let i=0;i<lines.length;i++){
+    const m = lines[i].match(/\b(?:Transaction|Txn|Trans|Order)\.?\s*(?:ID|No|Number)\b/i);
+    if (!m || /\bUPI\s*(transaction|txn)/i.test(lines[i])) continue;
+    const v = valueAfterLabel([lines[i], lines[i+1]||""], /\b(?:Transaction|Txn|Trans|Order)\.?\s*(?:ID|No|Number)\b/i, ID);
+    if (v && /\d/.test(v)){ d.transaction_id = v; break; }
+  }
+  d.reference_no =
+    valueAfterLabel(lines, /\b(?:UTR|RRN)(?:\s*(?:No|Number))?\.?/i, /[A-Z0-9]{10,22}/i) ||
+    valueAfterLabel(lines, /\bUPI\s*(?:Ref(?:erence)?|transaction|txn)\s*(?:ID|No|Number)?\.?/i, /\d{10,16}/) ||
+    valueAfterLabel(lines, /\b(?:Bank\s*)?Ref(?:erence)?\.?\s*(?:No|Number|ID)?\.?(?=\s|:|$)/i, /[A-Z0-9]*\d{6,}[A-Z0-9]*/i);
+  if (d.transaction_id && d.transaction_id===d.reference_no) d.reference_no = "";
+
+  // Mode
+  d.payment_mode = /\bIMPS\b/i.test(all)?"IMPS":/\bNEFT\b/i.test(all)?"NEFT":/\bRTGS\b/i.test(all)?"RTGS":
+    (/\bUPI\b|@[a-z]{2,}/i.test(all) || d.app_or_source) ? "UPI" : /\bcheque\b/i.test(all)?"Cheque":/\bcard\b/i.test(all)?"Card":"";
+
+  // Sections
+  const isTo   = l => /^\W*(paid\s*to|sent\s*to|credited\s*to|beneficiary|payee|receiver|to\b)/i.test(l) && !/^\W*sent\s*to\s*:?\s*(g\s?pay|google|phonepe|paytm|bhim)/i.test(l);
+  const isFrom = l => /^\W*(from\b|debited\s*from|paid\s*by|sender|payer|received\s*from)/i.test(l);
+  const received = lines.slice(0,4).some(l=>/^\W*(from\s+[A-Za-z]|received\s*from|payment\s*received)/i.test(l)) && !lines.some(l=>/^\W*paid\s*to\b/i.test(l));
+  const upiRe = /([A-Za-z0-9•·*._-]{2,}@[A-Za-z]{2,})/;
+  const upiNear = (i, n=3) => { for (let k=i;k<Math.min(lines.length,i+n);k++){ const m = lines[k].match(upiRe); if (m) return fixUpi(m[1]); } return ""; };
+  const nameNear = (i) => nameFrom(lines[i]) || nameFrom(lines[i+1]) || "";
+
+  const toIdx = lines.findIndex(isTo);
+  const fromIdxs = lines.map((l,i)=>isFrom(l)?i:-1).filter(i=>i>=0);
+  const fromLbl = fromIdxs.find(i=>/^\W*(from\s*:|debited\s*from|paid\s*by)/i.test(lines[i])) ?? fromIdxs[0] ?? -1;
+
+  d.payee_name = toIdx>=0 ? nameNear(toIdx) : "";
+  d.payee_upi_or_account = toIdx>=0 ? upiNear(toIdx) : "";
+  if (!d.payee_upi_or_account){
+    const firstUpi = lines.findIndex((l,i)=>upiRe.test(l) && !fromIdxs.some(f=>i>=f && i<=f+2));
+    if (firstUpi>=0){ d.payee_upi_or_account = fixUpi(lines[firstUpi].match(upiRe)[1]); if (!d.payee_name) d.payee_name = nameFrom(lines[firstUpi-1]); }
+  }
+  if (!d.payee_upi_or_account){ const a = all.match(/(?:A\/?c|Account)\s*(?:No|Number)?\.?\s*[:#-]?\s*([X*x•\d]{4,20})/i); if (a) d.payee_upi_or_account = a[1]; }
+  // "To: NAME" beats a short first name from the header
+  const toColon = lines.find(l=>/^\W*to\s*:/i.test(l)); if (toColon && nameFrom(toColon).length > d.payee_name.length) d.payee_name = nameFrom(toColon);
+
+  d.payer_name = fromLbl>=0 ? nameNear(fromLbl) : "";
+  d.payer_upi = "";
+  for (const f of fromIdxs){ const u = upiNear(f, 2); if (u && u!==d.payee_upi_or_account){ d.payer_upi = u; break; } }
+  if (!d.payer_upi && received) d.payer_upi = "";
+  const deb = lines.findIndex(l=>/debited\s*from/i.test(l));
+  const acctScope = deb>=0 ? lines.slice(deb, deb+3).join("\n") : fromLbl>=0 ? lines.slice(fromLbl, fromLbl+4).join("\n") : "";
+  d.payer_account = (acctScope.match(/[X*x•]{2,}\s*(\d{4})\b/) || acctScope.match(/\b[A-Za-z ]*Bank[^\n]*?[\s-](\d{4})\b/i) || [])[1] || "";
+
+  // Bank names written on the snap
+  let bankLine = -1, bankName = "";
+  for (let i=0;i<lines.length && bankLine<0;i++) for (const b of BANKS){
+    const re = new RegExp("\\b"+b.replace(/ /g,"\\s+")+"\\b","i");
+    if (re.test(lines[i]) && !upiRe.test(lines[i]) && !/powered\s*by/i.test(lines[i]) && !/powered\s*by/i.test(lines[i-1]||"")){ bankLine=i; bankName=lines[i].match(re)[0].replace(/\s+/g," "); break; }
+  }
+  const handle = (d.payee_upi_or_account.split("@")[1]||"");
+  d.payee_bank = HANDLE_BANK[handle] ?? "";
+  d.payer_bank = "";
+  if (bankLine>=0){
+    const last4 = (lines[bankLine].match(/(\d{4})\s*$/)||[])[1];
+    if (received){ d.payee_bank = bankName; if (last4) notes["Credited A/c (last digits)"] = last4; }
+    else { d.payer_bank = bankName; if (last4 && !d.payer_account) d.payer_account = last4; }
+  }
+
+  // ---- Bank receipts / payment advices (NEFT, RTGS, IMPS, net banking) ----
+  const kv = (re) => { for (const l of lines){ const m = l.match(re); if (m){ const v = l.slice(m.index+m[0].length).replace(/^[\s:;.-]+/,"").trim(); if (v) return v; } } return ""; };
+  const rName = kv(/\b(?:Remitter|Sender|Payer|Debtor)(?:'s|’s)?\s*Name\b/i);
+  const bName = kv(/\b(?:Beneficiary|Payee|Receiver|Creditor)(?:'s|’s)?\s*Name\b/i);
+  const rAcct = kv(/\b(?:Remitter|Sender|Debit|From)(?:'s|’s)?\s*(?:Account|A\/?c)\b\s*(?:No|Number)?\.?/i);
+  const bAcct = kv(/\b(?:Beneficiary|Payee|Credit|To)(?:'s|’s)?\s*(?:Account|A\/?c)\b\s*(?:No|Number)?\.?/i);
+  if (bName){ d.payee_name = bName; }
+  if (rName){ d.payer_name = rName; }
+  if (bAcct && /\d{4}/.test(bAcct)) d.payee_upi_or_account = bAcct.replace(/\s+/g,"");
+  if (rAcct && /\d{4}/.test(rAcct)) d.payer_account = rAcct.replace(/[^\d]/g,"").slice(-4);
+  const dt = kv(/\b(?:Transaction|Transfer|Txn|Value|Payment)\s*Date\b/i); if (dt) d.__dateLine = dt;
+  const mode = kv(/\b(?:Transfer\s*Mode|Payment\s*(?:Product|Mode|Type)|Mode\s*of\s*(?:Payment|Transfer))\b/i);
+  if (/\b(NEFT|RTGS|IMPS|UPI)\b/i.test(mode)) d.payment_mode = mode.match(/\b(NEFT|RTGS|IMPS|UPI)\b/i)[1].toUpperCase();
+
+  // "To" / "From" blocks: name may wrap to a second line; bank name and masked A/c sit under the name
+  const LABEL = /^\W*(to|from|amount|transfer|note|remarks?|reference|utr|date|mode|status|current\s*a\/?c|savings\s*a\/?c|a\/?c|account|ifsc|debited|credited)\b/i;
+  const block = (i) => { const out=[]; for (let k=i+1;k<Math.min(lines.length,i+6);k++){ if (k>i+1 && LABEL.test(lines[k]) && !/a\/?c|account/i.test(lines[k])) break; out.push(lines[k]); } return out; };
+  const bankIn = (ls) => { for (const l of ls) for (const b of BANKS){ const re = new RegExp("\\b"+b.replace(/ /g,"\\s+")+"\\b","i"); if (re.test(l) && !upiRe.test(l)) return l.replace(/^[^A-Za-z]+/,"").replace(/\s+\d{4}\s*$/,"").trim(); } return ""; };
+  const maskedIn = (ls) => { for (const l of ls){ const m = l.match(/[X*x•]{2,}[\s*X•x]*([\d][\d ]{2,6}\d)\s*$/); if (m){ const dg = m[1].replace(/\s/g,""); if (dg.length>=4) return dg.slice(-4); } } return ""; };
+  const toBare = lines.findIndex(l=>/^\W*to\W*$/i.test(l)), fromBare = lines.findIndex(l=>/^\W*from\W*$/i.test(l));
+  if (toBare>=0){
+    const bl = block(toBare);
+    if (!bName){ let n = bl[0]||""; if (bl[1] && /^[A-Z][A-Z .&]+$/.test(bl[1]) && !LABEL.test(bl[1]) && !bankIn([bl[1]])) n += " " + bl[1]; n = n.replace(/\bLIMITE$/,"LIMITED").replace(/\bPRIVAT$/,"PRIVATE"); if (nameFrom(n)) d.payee_name = n.trim(); }
+    const bk = bankIn(bl); if (bk) { d.payee_bank = bk; notes["Receiver bank from"] = "bank named under To"; }
+    const m4 = maskedIn(bl); if (m4 && !/@/.test(d.payee_upi_or_account)) d.payee_upi_or_account = "XXXX" + m4;
+  }
+  if (fromBare>=0){
+    const bl = block(fromBare);
+    if (!rName && nameFrom(bl[0])) d.payer_name = bl[0].replace(/^[^A-Za-z]+/,"").trim();
+    const bk = bankIn(bl); if (bk) { d.payer_bank = bk; notes["Payer bank from"] = "bank named under From"; }
+    const m4 = maskedIn(bl); if (m4) d.payer_account = m4;
+  }
+
+  // IFSC codes printed on the slip (e.g. ICIC0004017 next to the beneficiary account) -> receiver's bank
+  const ifscs = [...all.matchAll(/\b([A-Z]{4})0([A-Z0-9]{6})\b/g)].filter(m=>IFSC_BANK[m[1]]);
+  if (ifscs.length && !notes["Receiver bank from"]){
+    const benIfsc = ifscs.find(m=>{ const l = lines.find(x=>x.includes(m[0]))||""; return !/remitter|sender|debit|from/i.test(l); });
+    if (benIfsc){ d.payee_bank = IFSC_BANK[benIfsc[1]]; notes["Receiver bank from"] = "IFSC " + benIfsc[0]; }
+  }
+
+  // Payer's bank, most reliable first
+  if (!notes["Payer bank from"]){
+    const utr = (d.reference_no || "").toUpperCase();
+    const code = utr.slice(0,4);
+    if (/^[A-Z]{4}/.test(utr) && IFSC_BANK[code] && d.payment_mode !== "UPI"){
+      d.payer_bank = IFSC_BANK[code]; notes["Payer bank from"] = "UTR starts with " + code + " (sending bank's code)";
+    } else if (!received && !d.payer_bank) {
+      // Letterhead: a bank name in the first two lines means the receipt came from the payer's own bank
+      const head = bankIn(lines.slice(0,2));
+      if (head && d.payment_mode !== "UPI"){ d.payer_bank = head.replace(/\s*BANK\b.*$/i," Bank").replace(/^(\w+) Bank$/i,(x,a)=>IFSC_BANK[Object.keys(IFSC_BANK).find(k=>IFSC_BANK[k].toUpperCase().startsWith(a.toUpperCase()))]||x); notes["Payer bank from"] = "bank letterhead on the receipt"; }
+    }
+  }
+  if (!d.payer_bank && d.payer_upi){ const h = d.payer_upi.split("@")[1]; if (HANDLE_BANK[h]) notes["Payer UPI handle"] = "@" + h + " is " + HANDLE_BANK[h] + "'s UPI handle; the account itself may be in another bank";  }
+
+  // Date / time: prefer lines with a date, ignore the phone status bar
+  const dateLine = (d.__dateLine && normDate(d.__dateLine, year) ? d.__dateLine : "") || lines.find(l=>normDate(l, year) && /\d{1,2}[:.]\d{2}/.test(l)) || lines.find(l=>normDate(l, year)) || "";
+  d.date = normDate(dateLine, year);
+  if (d.date && !/\b20\d{2}\b|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2}\b/.test(dateLine)) notes["Year"] = "Not shown on snap; assumed " + year;
+  const tLine = /\d{1,2}[:.]\d{2}/.test(dateLine) ? dateLine : (lines.find(l=>/\d{1,2}[:.]\d{2}\s*[AaPp]\.?\s*[Mm]/.test(l)) || "");
+  const tm = tLine.match(/\b\d{1,2}[:.]\d{2}(?::\d{2})?\s*(?:[AaPp]\.?\s*[Mm]\.?)?/);
+  d.time = tm ? to24(tm[0]) : "";
+
+  const rm = all.match(/\b(?:Remarks?|Note|Message|Purpose|Description)\s*[:\-]\s*([^\n]{2,80})/i);
+  d.remarks = rm ? rm[1].trim() : "";
+  if (!d.remarks){ const i = lines.findIndex(l=>/^\W*(note|remarks?|message|purpose|transaction\s*remarks|narration)\W*$/i.test(l)); if (i>=0 && lines[i+1]) d.remarks = lines[i+1]; }
+  if (!d.remarks){ const v = kv(/\b(?:Transaction\s*Remarks|Narration|Purpose)\b/i); if (v) d.remarks = v.slice(0,120); }
+  const canon = b => { if (!b) return b; const u = b.toUpperCase().replace(/[^A-Z& ]/g," ").replace(/\s+/g," ").replace(/\s*(LIMITED|LTD)\s*$/,"").trim();
+    for (const v of Object.values(IFSC_BANK)) if (v.toUpperCase()===u) return v;
+    const short = {SBI:"State Bank of India",HDFC:"HDFC Bank","HDFC BANK":"HDFC Bank",ICICI:"ICICI Bank","ICICI BANK":"ICICI Bank",PNB:"Punjab National Bank",KOTAK:"Kotak Mahindra Bank",IDFC:"IDFC First Bank",AXIS:"Axis Bank","YES BANK":"Yes Bank"};
+    return short[u] || b.replace(/[\s-]+$/,"").trim(); };
+  d.payer_bank = canon(d.payer_bank); d.payee_bank = canon(d.payee_bank);
+  delete d.__dateLine;
+  d.other = notes;
+  return d;
+}
+
+
+const FIELDS = [
+  ["payment_mode","Payment Mode"],["status","Status"],
+  ["amount","Amount (₹)"],["amount_in_words","Amount in Words"],
+  ["date","Date"],["time","Time"],
+  ["reference_no","Reference / UTR No."],["transaction_id","Transaction ID"],
+  ["payee_name","Paid To (Name)"],["payee_upi_or_account","Paid To UPI / A/c"],
+  ["payee_bank","Receiver Bank"],["payer_name","Paid By (Name)"],
+  ["payer_upi","Paid By UPI"],["payer_bank","Payer Bank"],
+  ["payer_account","Payer A/c (last digits)"],["app_or_source","App / Source"],
+  ["remarks","Remarks"]
+];
+const HL = new Set(["amount","reference_no","transaction_id","date","time","payee_bank","payment_mode"]);
+let items = [], selId = null, view = "one", busy = false;
+const $ = id => document.getElementById(id);
+const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const doneItems = () => items.filter(i=>i.state==="done");
+const noteText = d => Object.entries(d.other||{}).filter(([,v])=>v).map(([k,v])=>k+": "+v).join("; ");
+
+function toText(it, idx){
+  const d = it.data || {}; const lines = [];
+  lines.push(`=== Snap ${idx!=null?idx+1+" · ":""}${it.name} ===`);
+  const w = Math.max(...FIELDS.map(f=>f[1].length));
+  for (const [k,l] of FIELDS) if (d[k]) lines.push(l.padEnd(w," ")+" : "+d[k]);
+  const o = d.other||{}; const ks = Object.keys(o).filter(k=>o[k]);
+  if (ks.length){ lines.push("--- Notes ---"); for (const k of ks) lines.push(k+" : "+o[k]); }
+  return lines.join("\n");
+}
+const allText = () => doneItems().map((it,i)=>toText(it,i)).join("\n\n");
+
+function removeItem(id){
+  const i = items.findIndex(x=>x.id===id); if (i<0) return;
+  if (items[i].state==="run") return;
+  URL.revokeObjectURL(items[i].url); items.splice(i,1);
+  if (selId===id) selId = (items[i]||items[i-1]||{}).id || null;
+  render();
+}
+function renderQueue(){
+  const q = $("queue"); q.innerHTML = "";
+  items.forEach(it=>{
+    const li = document.createElement("li");
+    li.className = "qi"+(it.id===selId?" sel":""); li.tabIndex = 0;
+    const pill = {done:["done","Read"],wait:["wait","Waiting"],run:["run","Reading…"],err:["err","Failed"]}[it.state];
+    const sub = it.data?.amount ? "₹"+it.data.amount+(it.data.reference_no||it.data.transaction_id?" · "+(it.data.reference_no||it.data.transaction_id):"") : (it.err||"");
+    li.innerHTML = `<img src="${it.url}" alt=""><div style="min-width:0"><div class="nm">${esc(it.name)}</div><div class="sub">${esc(sub)}</div></div><span class="pill ${pill[0]}">${pill[1]}</span><button class="x" title="Remove this image" aria-label="Remove ${esc(it.name)}"${it.state==="run"?" disabled":""}>×</button>`;
+    li.onclick = e=>{ if (e.target.closest(".x")) return; selId=it.id; setView("one"); render(); };
+    li.querySelector(".x").onclick = e=>{ e.stopPropagation(); removeItem(it.id); };
+    li.onkeydown = e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); li.click(); } if(e.key==="Delete"){ removeItem(it.id); } };
+    q.appendChild(li);
+  });
+  $("readBtn").hidden = busy || !items.some(i=>i.state==="err");
+  $("clearBtn").disabled = busy || !items.length;
+  $("xlsBtn").disabled = !doneItems().length;
+  const n = doneItems().length; $("allCount").textContent = n ? "("+n+")" : "";
+}
+function renderAll(){
+  const rows = doneItems();
+  const head = `<tr><th>#</th><th>File</th>${FIELDS.map(f=>`<th>${esc(f[1])}</th>`).join("")}<th>Notes</th></tr>`;
+  const body = rows.map((it,i)=>`<tr data-id="${it.id}"><td>${i+1}</td><td>${esc(it.name)}</td>${FIELDS.map(([k])=>`<td class="${HL.has(k)?"hl":""}">${esc(it.data[k]||"")}</td>`).join("")}<td class="nt">${esc(noteText(it.data))}</td></tr>`).join("");
+  $("allTable").innerHTML = rows.length ? head+body : `<tr><td class="empty-state">No snaps read yet.</td></tr>`;
+  $("allTable").querySelectorAll("tr[data-id]").forEach(tr=>tr.onclick=()=>{ selId=tr.dataset.id; setView("one"); render(); });
+  $("txt").value = allText();
+}
+function renderResult(){
+  $("viewOne").hidden = view!=="one"; $("viewAll").hidden = view!=="all";
+  if (view==="all"){ $("txtLabel").textContent = "All snaps as text"; renderAll(); return; }
+  $("txtLabel").textContent = "Text output";
+  const it = items.find(i=>i.id===selId);
+  if (!it){
+    $("resTitle").textContent = "Extracted details";
+    $("fields").innerHTML = `<div class="f empty-state">Add a screenshot on the left. Its details will appear here.</div>`;
+    $("rawBox").hidden = true; $("txt").value = ""; return;
+  }
+  $("resTitle").textContent = "Extracted details · " + it.name;
+  const d = it.data || {}; const dis = it.state!=="done" ? " disabled" : "";
+  const warnAmt = d.other && d.other["Check amount"];
+  $("fields").innerHTML = FIELDS.map(([k,l])=>
+    `<label class="f${k==="remarks"?" wide":""}${HL.has(k)?" hl":""}${it.state==="done"&&!d[k]&&HL.has(k)?" miss":""}${k==="amount"&&warnAmt?" miss":""}"><span class="k">${esc(l)}</span><input class="v" data-k="${k}" id="fld_${k}" value="${esc(d[k]||"")}" placeholder="${it.state==="run"?"reading…":"—"}"${dis}></label>`
+  ).join("") + Object.entries(d.other||{}).filter(([,v])=>v).map(([k,v])=>
+    `<div class="f note-f"><span class="k">${esc(k)}</span><div class="v">${esc(v)}</div></div>`).join("");
+  $("fields").querySelectorAll("input").forEach(inp=>inp.oninput=()=>{ d[inp.dataset.k]=inp.value; if (inp.dataset.k==="amount" && d.other) delete d.other["Check amount"]; it.data=d; $("txt").value=toText(it); renderQueue(); });
+  $("rawBox").hidden = !it.raw; $("raw").textContent = it.raw || "";
+  $("txt").value = it.state==="done" ? toText(it) : it.state==="err" ? "Could not read this snap: "+(it.err||"") : "";
+}
+function render(){ renderQueue(); renderResult(); }
+function setView(v){ view=v; $("tabOne").setAttribute("aria-selected",v==="one"); $("tabAll").setAttribute("aria-selected",v==="all"); renderResult(); }
+$("tabOne").onclick=()=>setView("one"); $("tabAll").onclick=()=>setView("all");
+function status(msg,bad){ const s=$("status"); s.textContent=msg||""; s.className="status note"+(bad?" err":""); }
+
+async function prep(file){
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(2, 2400/Math.max(bmp.width,bmp.height)) || 1;
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width*Math.max(scale,1)); c.height = Math.round(bmp.height*Math.max(scale,1));
+  const x = c.getContext("2d"); x.imageSmoothingQuality = "high";
+  x.filter = "grayscale(1) contrast(1.15)"; x.drawImage(bmp,0,0,c.width,c.height);
+  // Dark screenshots (dark mode, coloured headers): also make a black-text-on-white copy
+  const img = x.getImageData(0,0,c.width,c.height), px = img.data;
+  let sum=0; for (let i=0;i<px.length;i+=16) sum+=px[i]; const mean = sum/(px.length/16);
+  let bw = null;
+  if (mean < 120){
+    bw = document.createElement("canvas"); bw.width=c.width; bw.height=c.height;
+    const out = new ImageData(c.width,c.height), o = out.data;
+    for (let i=0;i<px.length;i+=4){ const v = px[i] > 185 ? 0 : 255; o[i]=o[i+1]=o[i+2]=v; o[i+3]=255; }
+    bw.getContext("2d").putImageData(out,0,0);
+  }
+  return {c, bw};
+}
+
+let ocrWorker = null;
+async function getOcr(){
+  if (!window.Tesseract) throw new Error("The text reader didn't load. Check your internet connection and reload the page.");
+  if (!ocrWorker) ocrWorker = Tesseract.createWorker("eng").catch(e=>{ ocrWorker=null; throw e; });
+  return ocrWorker;
+}
+async function readOne(it){
+  it.state="run"; it.err=""; render();
+  try{
+    status(ocrWorker ? "Reading " + it.name + "…" : "Loading the text reader (first time takes a few seconds)…");
+    const w = await getOcr();
+    status("Reading " + it.name + "…");
+    const {c, bw} = await prep(it.file);
+    const { data } = await w.recognize(c);
+    let text = (data.text||"").trim();
+    if (bw){
+      await w.setParameters({ tessedit_pageseg_mode: "11" });
+      try { const r2 = await w.recognize(bw); text += "\n" + (r2.data.text||"").trim(); }
+      finally { await w.setParameters({ tessedit_pageseg_mode: "3" }); }
+    }
+    it.raw = text.trim();
+
+    if (!it.raw) throw new Error("No text found. Try a clearer or uncropped screenshot.");
+    it.data = parsePayment(it.raw);
+    if (!it.data.amount && !it.data.reference_no && !it.data.transaction_id) it.data.other = Object.assign({"Check":"Couldn't find amount or reference. Is this a payment screenshot?"}, it.data.other);
+    it.state="done";
+  }catch(e){ it.state="err"; it.err = e?.message || "Reading failed."; }
+  if (!items.includes(it)) return;
+  render();
+}
+async function readAll(){
+  if (busy) return; busy = true; render();
+  try{ let it; while ((it = items.find(i=>i.state==="wait"))){ if (view==="one") selId = it.id; await readOne(it); } }
+  finally { busy = false; }
+  const bad = items.filter(i=>i.state==="err").length, done = doneItems().length;
+  status(bad ? `${bad} failed: ${items.find(i=>i.state==="err").err}` : done>1 ? `${done} snaps read. See “All snaps” or download Excel.` : "Done. Check the highlighted fields.", !!bad);
+  render();
+}
+function addFiles(files){
+  const imgs = [...files].filter(f=>/^image\//.test(f.type));
+  if (!imgs.length){ status("Those files aren't images. Use JPG, PNG or WebP screenshots.", true); return; }
+  for (const f of imgs){ const id=Math.random().toString(36).slice(2); items.push({id,name:f.name||"pasted-image.png",file:f,url:URL.createObjectURL(f),state:"wait",data:null}); if (view==="one") selId=id; }
+  render(); readAll();
+}
+$("readBtn").onclick = ()=>{ items.forEach(i=>{ if(i.state==="err") i.state="wait"; }); readAll(); };
+$("clearBtn").onclick = ()=>{ if (busy) return; items.forEach(i=>URL.revokeObjectURL(i.url)); items=[]; selId=null; status(""); render(); };
+const drop=$("drop"), fi=$("file");
+drop.onclick=()=>fi.click();
+drop.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); fi.click(); } };
+fi.onchange=()=>{ addFiles(fi.files); fi.value=""; };
+["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
+["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over")}));
+drop.addEventListener("drop",e=>addFiles(e.dataTransfer.files));
+document.addEventListener("paste",e=>{ const fs=[...(e.clipboardData?.items||[])].filter(i=>i.kind==="file").map(i=>i.getAsFile()).filter(Boolean); if(fs.length){ e.preventDefault(); addFiles(fs); } });
+
+function note(msg){ $("actNote").textContent=msg; setTimeout(()=>$("actNote").textContent="",3000); }
+function saveBlob(blob, name){
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000);
+}
+$("copyBtn").onclick = async ()=>{
+  const t=$("txt"); if(!t.value) return;
+  try{ await navigator.clipboard.writeText(t.value); }catch{ t.focus(); t.select(); document.execCommand && document.execCommand("copy"); }
+  note("Copied");
+};
+$("dlBtn").onclick = ()=>{
+  const text=$("txt").value; if(!text) return;
+  const it = items.find(i=>i.id===selId);
+  const base = view==="all" ? "payment-snaps" : "payment-"+(it?.data?.reference_no || it?.data?.transaction_id || it?.name?.replace(/\.[^.]+$/,"") || "snap");
+  saveBlob(new Blob([text.replace(/\n/g,"\r\n")],{type:"text/plain"}), base.replace(/[^\w.-]+/g,"_")+".txt");
+  note("Saved to Downloads");
+};
+$("xlsBtn").onclick = ()=>{
+  const rows = doneItems(); if (!rows.length) return;
+  if (!window.XLSX){ status("The Excel maker didn't load. Check your internet connection and reload the page.", true); return; }
+  const header = ["Sl No.","File Name",...FIELDS.map(f=>f[1]),"Notes"];
+  const data = rows.map((it,i)=>{
+    const d = it.data;
+    return [i+1, it.name, ...FIELDS.map(([k])=>{
+      const v = d[k]||"";
+      if (k==="amount" && v!=="" && !isNaN(+v)) return +v;
+      return v;
+    }), noteText(d)];
+  });
+  const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
+  // keep long IDs as text so Excel doesn't turn them into 7.93E+11
+  const idCols = ["reference_no","transaction_id","payer_account"].map(k=>2+FIELDS.findIndex(f=>f[0]===k));
+  data.forEach((r,ri)=>idCols.forEach(ci=>{ const ref = XLSX.utils.encode_cell({r:ri+1,c:ci}); if (ws[ref]) { ws[ref].t="s"; ws[ref].v=String(ws[ref].v); } }));
+  const amtCol = 2+FIELDS.findIndex(f=>f[0]==="amount");
+  data.forEach((r,ri)=>{ const ref = XLSX.utils.encode_cell({r:ri+1,c:amtCol}); if (ws[ref] && ws[ref].t==="n") ws[ref].z = "#,##0.00"; });
+  ws["!cols"] = header.map((h,ci)=>({wch: Math.min(45, Math.max(h.length, ...data.map(r=>String(r[ci]??"").length)) + 2)}));
+  ws["!autofilter"] = {ref: XLSX.utils.encode_range({s:{r:0,c:0},e:{r:data.length,c:header.length-1}})};
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Payment Snaps");
+  const stamp = new Date(); const p = n=>String(n).padStart(2,"0");
+  XLSX.writeFile(wb, `payment-snaps-${stamp.getFullYear()}${p(stamp.getMonth()+1)}${p(stamp.getDate())}-${p(stamp.getHours())}${p(stamp.getMinutes())}.xlsx`);
+  status(`Excel saved with ${rows.length} snap${rows.length>1?"s":""}.`);
+};
+render();
+</script>
+
+</body>
+</html>
