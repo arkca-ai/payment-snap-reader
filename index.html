@@ -394,7 +394,8 @@ function glyphKind(G, b){
 
 const AMT_LABEL = /\b(amount|amt|paid|debited|credited|total|sent|received|transferred|you\s+paid|money\s+sent|payment\s+of|transfer\s+of)\b/i;
 const AMT_SKIP = /up\s*to|upto|limit|cashback|reward|offer|balance|\bKB\/s|scratch|coins?\b|points?\b|\bfee\b.*waived/i;
-const SYM_RE = "Rs\\.?|INR|[₹%zZF<&?=¥€£$]|X(?=\\d)";
+// ₹ misreads: symbols, X before a number, or any single letter glued to a comma-grouped amount (T2,999)
+const SYM_RE = "Rs\\.?|INR|[₹%zZF<&?=¥€£${}]|X(?=\\d)|[A-Za-z](?=\\d{1,3},\\d)";
 
 function findAmount(geo, notes, G){
   const hs=[]; geo.forEach(L=>L.words.forEach(w=>{ if (w.h) hs.push(w.h); }));
@@ -454,7 +455,7 @@ function findAmount(geo, notes, G){
   const confirmed = cands.some(c=>c!==best && c.v===best.v && !c.unsure);
   if (best.unsure && !confirmed) notes["Check amount"] = `Read as “${best.text}”. The first character looked like the ₹ sign, so it was taken as ₹${n.toLocaleString("en-IN",{minimumFractionDigits:2})}. Please verify.`;
   const box = best.preWord ? union(best.preWord.bbox, best.w.bbox) : best.w.bbox;
-  return {value:n.toFixed(2), box, fixedFrom: best.fixed ? best.text : "", unsure: best.unsure && !confirmed};
+  return {value:n.toFixed(2), box, fixedFrom: best.fixed ? best.text : "", unsure: best.unsure && !confirmed, word: best.w, raw: best.val};
 }
 function union(a,b){ if(!a) return b; if(!b) return a; return {x0:Math.min(a.x0,b.x0),y0:Math.min(a.y0,b.y0),x1:Math.max(a.x1,b.x1),y1:Math.max(a.y1,b.y1)}; }
 
@@ -496,7 +497,7 @@ function parsePayment(raw, year, geo, G){
     d.amount = wn.toFixed(2);
     if (amt && amt.value===d.amount){ meta.amountBox = amt.box; meta.fixedFrom = amt.fixedFrom; delete notes["Check amount"]; }
     else delete notes["Check amount"];
-  } else if (amt){ d.amount = amt.value; meta.amountBox = amt.box; meta.fixedFrom = amt.fixedFrom; }
+  } else if (amt){ d.amount = amt.value; meta.amountBox = amt.box; meta.fixedFrom = amt.fixedFrom; meta.amountWord = amt.word; meta.amountRaw = amt.raw; }
   else d.amount = "";
 
   const ID = /[A-Z0-9]{8,35}/i;
@@ -831,15 +832,28 @@ async function prep(file){
     let best=0; for (let k=1;k<64;k++) if (agg[k]>agg[best]) best=k;
     bg[by*bw+bx] = best*4+2;
   }
+  // Inside very thick strokes a tile can mistake the ink for background. Decide dark/light by majority
+  // over a wide neighbourhood, and take the background level only from tiles that agree.
+  const R = 3, dark = new Uint8Array(bw*bh), lvl = new Uint8Array(bw*bh);
+  for (let by=0;by<bh;by++) for (let bx=0;bx<bw;bx++){
+    let nd=0, nt=0;
+    for (let dy=-R;dy<=R;dy++) for (let dx=-R;dx<=R;dx++){ const yy=by+dy, xx=bx+dx; if (yy<0||yy>=bh||xx<0||xx>=bw) continue; nt++; if (bg[yy*bw+xx]<128) nd++; }
+    const isDark = nd*2 > nt; dark[by*bw+bx] = isDark ? 1 : 0;
+    const own = bg[by*bw+bx];
+    if ((own<128) === isDark){ lvl[by*bw+bx] = isDark ? 255-own : own; continue; }
+    let s=0, n=0;
+    for (let dy=-R;dy<=R;dy++) for (let dx=-R;dx<=R;dx++){ const yy=by+dy, xx=bx+dx; if (yy<0||yy>=bh||xx<0||xx>=bw) continue; const v=bg[yy*bw+xx]; if ((v<128)===isDark){ s += isDark?255-v:v; n++; } }
+    lvl[by*bw+bx] = n ? Math.round(s/n) : 255;
+  }
   // Flip dark backgrounds, then divide by the background so every area becomes dark text on white
   const out = new Uint8Array(N);
   let inverted = 0;
   for (let y=0;y<H;y++){
     const row = ((y/B)|0)*bw;
     for (let xx=0;xx<W;xx++){
-      const b0 = bg[row + ((xx/B)|0)];
-      let v = g[y*W+xx], b = b0;
-      if (b0 < 128){ v = 255-v; b = 255-b0; inverted++; }
+      const ti = row + ((xx/B)|0);
+      let v = g[y*W+xx], b = lvl[ti];
+      if (dark[ti]){ v = 255-v; inverted++; }
       let t = v / Math.max(b, 40); if (t>1) t=1;
       out[y*W+xx] = Math.round(255*Math.pow(t, 1.6));
     }
@@ -892,6 +906,7 @@ async function readOne(it){
         if (filled(d2) >= filled(d)){ d = d2; raw = raw2; geo = geo2; }
       } finally { await w.setParameters({ tessedit_pageseg_mode: "3" }); }
     }
+    await refineAmount(w, P, d);
     it.raw = raw; it.meta = {lines:geo, W:P.W, H:P.H};
     if (!it.raw) throw new Error("No text found. Try a clearer or uncropped screenshot.");
     if (!d.amount && !d.reference_no && !d.transaction_id) d.other = Object.assign({"Check":"Couldn't find an amount or reference. Is this a payment screenshot?"}, d.other);
@@ -900,6 +915,56 @@ async function readOne(it){
   current = null;
   if (!items.includes(it)) return;
   render();
+}
+/* Huge or shaky amounts: crop just the digits, shrink them to a comfortable size and read them again as numbers only */
+// Split a word box into glyphs by looking for blank pixel columns
+function glyphSegments(G, b){
+  const x0=Math.max(0,Math.floor(b.x0)), y0=Math.max(0,Math.floor(b.y0)), x1=Math.min(G.w,Math.ceil(b.x1)), y1=Math.min(G.h,Math.ceil(b.y1));
+  const hist=new Array(256).fill(0); for (let y=y0;y<y1;y++) for (let x=x0;x<x1;x++) hist[G.g[y*G.w+x]]++;
+  const t = otsu(hist, (x1-x0)*(y1-y0));
+  const segs=[]; let cur=null;
+  for (let x=x0;x<x1;x++){
+    let top=-1, bot=-1; for (let y=y0;y<y1;y++) if (G.g[y*G.w+x] <= t){ if (top<0) top=y; bot=y; }
+    if (top>=0){ if (!cur) cur={x0:x,x1:x+1,y0:top,y1:bot+1}; else { cur.x1=x+1; cur.y0=Math.min(cur.y0,top); cur.y1=Math.max(cur.y1,bot+1); } }
+    else if (cur){ segs.push(cur); cur=null; }
+  }
+  if (cur) segs.push(cur);
+  const maxH = Math.max(0, ...segs.map(s=>s.y1-s.y0));
+  return segs.filter(s=>s.y1-s.y0 >= 0.6*maxH);     // drop commas and dots
+}
+async function refineAmount(w, P, d){
+  const m = d._meta || {}, wd = m.amountWord;
+  if (!wd || !wd.bbox || d.amount_in_words) return;
+  if ((wd.conf ?? 100) >= 88 && wd.h <= 70) return;
+  let tall = glyphSegments(P.G, wd.bbox);
+  if (!tall.length) return;
+  if (glyphKind(P.G, tall[0])==="rupee") tall = tall.slice(1);     // ₹ is not a digit
+  const nDigits = tall.length; if (!nDigits || nDigits > 12) return;
+  const digitsOf = s => (String(s).match(/\d/g)||[]).length;
+  const bx0 = tall[0].x0, bx1 = Math.max(wd.bbox.x1, tall[tall.length-1].x1), by0 = Math.min(...tall.map(s=>s.y0)), by1 = Math.max(wd.bbox.y1, ...tall.map(s=>s.y1));
+  const gh = by1-by0, pad = Math.round(gh*0.2);
+  const reads = [];
+  try{
+    await w.setParameters({ tessedit_pageseg_mode: "7", tessedit_char_whitelist: "0123456789,." });
+    for (const target of [36, 52, 72]){
+      const s = target/gh, cw = Math.round((bx1-bx0+2*pad)*s)+40, ch = Math.round((gh+2*pad)*s)+40;
+      const c = document.createElement("canvas"); c.width=cw; c.height=ch;
+      const x = c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,cw,ch); x.imageSmoothingQuality="high";
+      x.drawImage(P.canvas, bx0-pad, by0-pad, bx1-bx0+2*pad, gh+2*pad, 20, 20, cw-40, ch-40);
+      const r = (await w.recognize(c)).data;
+      const t = (r.text||"").replace(/\s+/g,"").replace(/^[.,]+|[.,]+$/g,"");
+      if (/^\d[\d,]*(\.\d{1,2})?$/.test(t) && digitsOf(t)===nDigits) reads.push({v: parseFloat(t.replace(/,/g,"")).toFixed(2), conf: r.confidence||0});
+    }
+  } catch(e){ /* keep the first reading */ }
+  finally { await w.setParameters({ tessedit_pageseg_mode: "3", tessedit_char_whitelist: "" }); }
+  const origOK = digitsOf(m.amountRaw||d.amount) === nDigits;
+  if (origOK) reads.push({v: d.amount, conf: Math.max(wd.conf||0, 50), orig: true});
+  if (!reads.length){ d.other = d.other||{}; d.other["Check amount"] = "The big amount was hard to read. Please compare it with the screenshot."; return; }
+  const tally = {}; reads.forEach(r=>{ tally[r.v] = tally[r.v] || {n:0, c:0}; tally[r.v].n++; tally[r.v].c += r.conf; });
+  const [best] = Object.entries(tally).sort((a,b)=> b[1].n-a[1].n || b[1].c-a[1].c);
+  if (best[0] !== d.amount){ m.refinedFrom = d.amount; d.amount = best[0]; }
+  if (best[1].n >= 2 && d.other){ delete d.other["Check amount"]; }
+  else if (best[1].n < 2){ d.other = d.other||{}; d.other["Check amount"] = "The big amount was hard to read. Please compare it with the screenshot."; }
 }
 async function readAll(){
   if (busy) return; busy = true; render();
