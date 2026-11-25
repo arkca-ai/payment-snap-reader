@@ -4,149 +4,268 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Payment Snap Reader</title>
+<meta name="description" content="Read UPI and bank payment screenshots into Excel. Runs in your browser; nothing is uploaded.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f7a5a'/%3E%3Ctext x='32' y='45' font-size='38' text-anchor='middle' fill='white' font-family='Arial'%3E%E2%82%B9%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
 <style>
-/* Layout: left intake column (drop zone + queue), right result column; stacks on phones */
 :root{
-  --bg:#eef1f4; --panel:#ffffff; --ink:#15212e; --muted:#5d6b7a; --line:#d5dce4;
-  --accent:#1f5fae; --accent-ink:#ffffff; --ok:#1d7a4c; --warn:#a86a0b; --bad:#b3322c; --soft:#e4ecf6;
-  --f-display:"Manrope",system-ui,sans-serif; --f-body:"Manrope",system-ui,sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --bg:#f5f4ef; --panel:#ffffff; --panel-2:#fbfaf7; --ink:#15171a; --muted:#6a6e76; --faint:#9a9ea5; --line:#e5e3dc; --line-2:#efede7;
+  --accent:#0f7a5a; --accent-ink:#ffffff; --accent-soft:#e5f3ec; --accent-line:#b9dfcd;
+  --warn:#a76200; --warn-soft:#fdf2dc; --warn-line:#f1d7a3; --bad:#c0392b; --bad-soft:#fbe8e5;
+  --shadow:0 1px 2px rgba(20,20,15,.04),0 4px 16px rgba(20,20,15,.05);
+  --f:"Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --r:14px; color-scheme:light;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0f151c; --panel:#17202a; --ink:#e3e9ef; --muted:#93a1b0; --line:#2a3542;
-  --accent:#6ea6ec; --accent-ink:#0b1420; --ok:#5cc38e; --warn:#e0a84a; --bad:#ec7b73; --soft:#1d2a3a; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0f151c; --panel:#17202a; --ink:#e3e9ef; --muted:#93a1b0; --line:#2a3542;
-  --accent:#6ea6ec; --accent-ink:#0b1420; --ok:#5cc38e; --warn:#e0a84a; --bad:#ec7b73; --soft:#1d2a3a; color-scheme:dark}
+  --bg:#0e1012; --panel:#16191c; --panel-2:#1b1f23; --ink:#eceef0; --muted:#9aa1a9; --faint:#6c737b; --line:#272c31; --line-2:#21252a;
+  --accent:#3ccf98; --accent-ink:#06140e; --accent-soft:#12271f; --accent-line:#1f4a3a;
+  --warn:#f0b24a; --warn-soft:#2a210f; --warn-line:#4d3b16; --bad:#f07b6e; --bad-soft:#2c1714;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25); color-scheme:dark;
+}
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;padding-inline:16px;padding-block:24px 48px}
-.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
-header h1{font-family:var(--f-display);font-weight:800;font-size:clamp(22px,3vw,28px);margin:0;letter-spacing:-.01em;text-wrap:balance}
-header p{margin:4px 0 0;color:var(--muted);max-width:65ch}
-.grid{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:20px;align-items:start}
-@media (max-width:820px){.grid{grid-template-columns:minmax(0,1fr)}}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
-.label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-.drop{border:2px dashed var(--line);border-radius:8px;padding:24px 14px;text-align:center;cursor:pointer;display:flex;flex-direction:column;gap:6px;align-items:center;transition:border-color .15s,background .15s}
-.drop:hover,.drop.over,.drop:focus-visible{border-color:var(--accent);background:var(--soft);outline:none}
-.drop strong{font-size:16px}
-.drop span{color:var(--muted);font-size:13px}
-button{font:inherit;font-weight:700;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 14px;cursor:pointer}
-button:hover{border-color:var(--accent)}
-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-button:disabled{opacity:.5;cursor:not-allowed}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.queue{display:flex;flex-direction:column;gap:8px;list-style:none;margin:0;padding:0}
-.qi{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:10px;align-items:center;padding:6px;border-radius:8px;border:1px solid transparent;cursor:pointer}
-.qi:hover{border-color:var(--line)}
-.qi.sel{border-color:var(--accent);background:var(--soft)}
-.qi img{width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--line);background:var(--bg)}
-.qi .nm{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.qi .sub{font-size:12px;color:var(--muted);font-family:var(--f-mono)}
-.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
-.pill.done{color:var(--ok)} .pill.wait{color:var(--muted)} .pill.run{color:var(--warn)} .pill.err{color:var(--bad)}
-.note{font-size:13px;color:var(--muted)}
-.note.err{color:var(--bad)}
-.fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
-@media (max-width:560px){.fields{grid-template-columns:minmax(0,1fr)}}
-.f{background:var(--panel);padding:8px 12px;min-width:0}
-.f .k{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
-.f .v{font-family:var(--f-mono);font-size:14px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
-.f .v.empty{color:var(--muted)}
-.f.hl .v{font-weight:500;color:var(--accent)}
-textarea{width:100%;min-height:220px;font-family:var(--f-mono);font-size:13px;line-height:1.55;border:1px solid var(--line);border-radius:8px;padding:12px;background:var(--bg);color:var(--ink);resize:vertical}
-.tag{display:inline-block;font-size:11px;font-weight:700;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:1px 6px;margin-left:8px;vertical-align:middle}
-.status{min-height:1.4em}
-.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
-.tabs button{border:none;border-bottom:2px solid transparent;border-radius:0;background:none;padding:6px 10px;color:var(--muted)}
-.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
-
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--f);font-size:14.5px;line-height:1.5;-webkit-font-smoothing:antialiased}
 [hidden]{display:none!important}
-body{margin:0}
-.f.wide{grid-column:1/-1}
-.stack{display:flex;flex-direction:column;gap:14px}
-.qi{grid-template-columns:48px minmax(0,1fr) auto auto}
-.qi .x{border:none;background:none;color:var(--muted);font-size:20px;line-height:1;padding:4px 8px;border-radius:6px}
-.qi .x:hover{color:var(--bad);background:var(--bg)}
-.f{display:flex;flex-direction:column;gap:2px}
-.f input.v{border:1px solid transparent;border-radius:4px;background:transparent;color:var(--ink);padding:2px 4px;margin:0 -4px;width:calc(100% + 8px);font-family:var(--f-mono);font-size:14px}
-.f input.v:hover{border-color:var(--line)}
-.f input.v:focus{outline:none;border-color:var(--accent);background:var(--bg)}
-.f.hl input.v{color:var(--accent);font-weight:500}
-.f.miss{background:color-mix(in srgb,var(--warn) 12%,var(--panel))}
-.f.note-f{grid-column:1/-1}
-.f.note-f .v{color:var(--warn);font-size:13px}
-.empty-state{grid-column:1/-1;color:var(--muted);padding:28px 16px;text-align:center}
-details summary{cursor:pointer}
-pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--f-mono);font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;max-height:240px;overflow:auto;margin:8px 0 0}
-.tablewrap{overflow:auto;max-height:420px;border:1px solid var(--line);border-radius:8px}
-table{border-collapse:collapse;font-size:13px;min-width:100%}
-th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap;font-variant-numeric:tabular-nums}
-th{position:sticky;top:0;background:var(--soft);font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
-td{font-family:var(--f-mono)}
-td.hl{color:var(--accent)}
-td.nt{color:var(--warn);white-space:normal;min-width:460px;font-family:var(--f-body)}
-tbody tr,tr[data-id]{cursor:pointer}
-tr[data-id]:hover td{background:var(--bg)}
-</style>
+button,input,textarea{font:inherit;color:inherit}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
+/* top bar */
+.top{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top-in{max-width:1400px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:14px}
+.mark{width:36px;height:36px;border-radius:10px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:21px;font-weight:700;font-family:Arial,sans-serif;flex:none}
+.brand h1{margin:0;font-size:17px;font-weight:800;letter-spacing:-.01em}
+.brand p{margin:0;font-size:12.5px;color:var(--muted)}
+.sp{flex:1}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:999px;padding:5px 11px;white-space:nowrap}
+.icon-btn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--panel);display:grid;place-items:center;cursor:pointer}
+.icon-btn:hover{border-color:var(--faint)}
+@media (max-width:640px){.chip span{display:none}.brand p{display:none}}
+
+/* layout */
+.app{max-width:1400px;margin:0 auto;padding:20px;display:grid;grid-template-columns:330px minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:960px){.app{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.side{display:flex;flex-direction:column;gap:14px;position:sticky;top:80px;max-height:calc(100vh - 100px)}
+@media (max-width:960px){.side{position:static;max-height:none}}
+.side .card{padding:14px}
+.lbl{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+
+.drop{border:1.5px dashed var(--accent-line);background:var(--accent-soft);border-radius:12px;padding:22px 14px;text-align:center;cursor:pointer;display:flex;flex-direction:column;gap:4px;align-items:center;transition:transform .12s,border-color .12s,background .12s}
+.drop:hover,.drop.over,.drop:focus-visible{border-color:var(--accent);outline:none}
+.drop.over{transform:scale(1.01)}
+.drop .di{width:40px;height:40px;border-radius:12px;background:var(--panel);display:grid;place-items:center;color:var(--accent);margin-bottom:6px;box-shadow:var(--shadow)}
+.drop strong{font-size:15px}
+.drop span{font-size:12.5px;color:var(--muted)}
+kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 5px;background:var(--panel)}
+
+.qcard{display:flex;flex-direction:column;min-height:0;padding:0!important;overflow:hidden}
+.qhead{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px}
+.queue{list-style:none;margin:0;padding:4px 8px 8px;overflow:auto;display:flex;flex-direction:column;gap:2px;min-height:0}
+.qi{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px;border-radius:10px;cursor:pointer;position:relative;border:1px solid transparent}
+.qi:hover{background:var(--panel-2)}
+.qi.sel{background:var(--accent-soft);border-color:var(--accent-line)}
+.qi img{width:42px;height:42px;object-fit:cover;object-position:top;border-radius:8px;border:1px solid var(--line);background:var(--bg)}
+.qi .amt{font-family:var(--mono);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qi .sub{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qi .x{border:none;background:none;color:var(--faint);font-size:18px;line-height:1;padding:4px 6px;border-radius:6px;cursor:pointer;opacity:0}
+.qi:hover .x,.qi.sel .x,.qi .x:focus-visible{opacity:1}
+.qi .x:hover{color:var(--bad);background:var(--bad-soft)}
+.qi .bar{position:absolute;left:60px;right:14px;bottom:5px;height:3px;border-radius:3px;background:var(--line);overflow:hidden}
+.qi .bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.dot.ok{background:var(--accent)} .dot.warn{background:var(--warn)} .dot.err{background:var(--bad)} .dot.wait{background:var(--faint)}
+.qfoot{border-top:1px solid var(--line);padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:var(--panel-2)}
+.total{display:flex;justify-content:space-between;align-items:baseline}
+.total b{font-family:var(--mono);font-size:18px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 14px;font-weight:600;font-size:13.5px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+.btn:hover{border-color:var(--faint)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.grow{flex:1;justify-content:center}
+.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+.btn:focus-visible,.icon-btn:focus-visible,.qi:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status{font-size:12.5px;color:var(--muted);min-height:1.2em}
+.status.err{color:var(--bad)}
+
+/* work area */
+.work{min-width:0;display:flex;flex-direction:column;gap:14px}
+.tabs{display:flex;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;width:max-content;max-width:100%}
+.tabs button{border:none;background:none;padding:7px 14px;border-radius:9px;font-weight:600;font-size:13.5px;color:var(--muted);cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg)}
+.tabs .n{font-family:var(--mono);font-size:11.5px;opacity:.75;margin-left:4px}
+
+.empty{padding:56px 24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px}
+.empty h2{margin:0;font-size:22px;letter-spacing:-.01em}
+.empty p{margin:0;color:var(--muted);max-width:52ch}
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,190px));gap:12px;margin-top:18px}
+@media (max-width:640px){.steps{grid-template-columns:minmax(0,1fr)}}
+.step{border:1px solid var(--line);border-radius:12px;padding:14px;text-align:left;background:var(--panel-2)}
+.step b{display:block;font-size:13.5px;margin-bottom:2px}
+.step span{font-size:12.5px;color:var(--muted)}
+.step i{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:600}
+
+.review{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:1180px){.review{grid-template-columns:minmax(0,1fr)}}
+.preview{padding:12px;position:sticky;top:80px}
+@media (max-width:1180px){.preview{position:static}}
+.pv-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.pv-name{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.imgwrap{position:relative;border-radius:10px;overflow:auto;max-height:calc(100vh - 170px);background:var(--bg);border:1px solid var(--line)}
+.imgwrap .inner{position:relative}
+.imgwrap img{display:block;width:100%;height:auto}
+.hl-box{position:absolute;border:2px solid var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent);border-radius:4px;pointer-events:none;transition:all .18s;box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 18%,transparent)}
+.pv-hint{font-size:12px;color:var(--faint);margin-top:8px}
+
+.form{display:flex;flex-direction:column;gap:14px;min-width:0}
+.hero{padding:18px 18px 16px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;align-items:end}
+.hero .amtbox{display:flex;align-items:baseline;gap:6px;min-width:0}
+.hero .rs{font-size:30px;font-weight:600;color:var(--muted);font-family:Arial,sans-serif}
+.hero input{font-family:var(--mono);font-size:34px;font-weight:600;letter-spacing:-.02em;border:1px solid transparent;border-radius:8px;background:transparent;padding:0 6px;margin-left:-6px;width:100%;min-width:0}
+.hero input:hover{border-color:var(--line)}
+.hero input:focus{outline:none;border-color:var(--accent);background:var(--panel-2)}
+.hero .meta{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.badge{font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px;border:1px solid var(--line);background:var(--panel-2);color:var(--muted);white-space:nowrap}
+.badge.ok{color:var(--accent);background:var(--accent-soft);border-color:var(--accent-line)}
+.badge.warn{color:var(--warn);background:var(--warn-soft);border-color:var(--warn-line)}
+.badge.bad{color:var(--bad);background:var(--bad-soft);border-color:color-mix(in srgb,var(--bad) 30%,transparent)}
+.hero.miss input{background:var(--warn-soft)}
+.alert{grid-column:1/-1;font-size:13px;color:var(--warn);background:var(--warn-soft);border:1px solid var(--warn-line);border-radius:10px;padding:8px 12px}
+.fixnote{grid-column:1/-1;font-size:12.5px;color:var(--accent)}
+
+.groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media (max-width:640px){.groups{grid-template-columns:minmax(0,1fr)}}
+.grp{padding:6px 0 4px}
+.grp.wide{grid-column:1/-1}
+.grp h3{margin:0;padding:8px 16px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.fl{display:block;padding:6px 16px 8px;border-top:1px solid var(--line-2)}
+.grp h3+.fl{border-top:none}
+.fl .k{display:block;font-size:12px;color:var(--muted);font-weight:500;margin-bottom:1px}
+.fl input{width:100%;border:1px solid transparent;border-radius:7px;background:transparent;padding:4px 8px;margin:0 -8px;width:calc(100% + 16px);font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums}
+.fl input::placeholder{color:var(--faint);font-family:var(--f);font-size:13px}
+.fl input:hover{border-color:var(--line)}
+.fl input:focus{outline:none;border-color:var(--accent);background:var(--panel-2)}
+.fl.miss input{background:var(--warn-soft)}
+.fl .n{display:block;font-size:12px;color:var(--warn);margin-top:2px}
+.fl .n.info{color:var(--muted)}
+details.raw{padding:12px 16px}
+details.raw summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--muted)}
+details.raw pre{white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--mono);font-size:12px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px;max-height:300px;overflow:auto;margin:10px 0 0}
+
+.tablecard{overflow:hidden}
+.tablewrap{overflow:auto;max-height:calc(100vh - 190px)}
+table{border-collapse:collapse;font-size:13px;min-width:100%}
+th,td{padding:9px 12px;border-bottom:1px solid var(--line-2);text-align:left;white-space:nowrap}
+th{position:sticky;top:0;background:var(--panel-2);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);z-index:1}
+td{font-family:var(--mono);font-variant-numeric:tabular-nums}
+td.num{text-align:right;font-weight:600}
+td.nt{font-family:var(--f);color:var(--warn);white-space:normal;min-width:280px}
+tr[data-id]{cursor:pointer}
+tr[data-id]:hover td{background:var(--panel-2)}
+tfoot td{font-weight:700;background:var(--panel-2);position:sticky;bottom:0}
+
+.textcard{padding:14px;display:flex;flex-direction:column;gap:12px}
+textarea{width:100%;min-height:420px;font-family:var(--mono);font-size:13px;line-height:1.6;border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--panel-2);resize:vertical}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:13.5px;font-weight:600;opacity:0;transition:all .2s;pointer-events:none;z-index:50}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<script>(function(){try{var t=localStorage.getItem("psr-theme");if(!t)t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.dataset.theme=t}catch(e){}})();</script>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>Payment Snap Reader</h1>
-    <p>Drop payment screenshots from any bank or UPI app. The page reads the text on your computer and fills in the details. Check the highlighted fields, fix anything if needed, then download Excel or copy the text.</p>
-  </header>
+<header class="top">
+  <div class="top-in">
+    <div class="mark" aria-hidden="true">₹</div>
+    <div class="brand">
+      <h1>Payment Snap Reader</h1>
+      <p>UPI &amp; bank payment screenshots → Excel</p>
+    </div>
+    <div class="sp"></div>
+    <span class="chip" title="The text is read inside your browser. Screenshots never leave your computer.">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      <span>Runs on your device · nothing uploaded</span>
+    </span>
+    <button class="icon-btn" id="themeBtn" title="Switch light / dark" aria-label="Switch light or dark theme">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </div>
+</header>
 
-  <div class="grid">
-    <section class="panel" aria-label="Upload">
-      <div class="label">Screenshots</div>
+<main class="app">
+  <aside class="side">
+    <div class="card">
       <div class="drop" id="drop" tabindex="0" role="button" aria-label="Choose or drop screenshots">
-        <strong>Drop images here</strong>
-        <span>or click to choose · or paste with Ctrl+V</span>
-        <span>JPG, PNG, WebP · several at once is fine</span>
+        <div class="di"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></div>
+        <strong>Drop screenshots here</strong>
+        <span>or click to choose · paste with <kbd>Ctrl</kbd>+<kbd>V</kbd></span>
+        <span>GPay, PhonePe, Paytm, BHIM, bank apps, NEFT/IMPS slips</span>
       </div>
       <input type="file" id="file" accept="image/*" multiple hidden>
-      <div class="row">
-        <button class="primary" id="xlsBtn" disabled>Download Excel</button>
-        <button id="readBtn" hidden>Retry failed</button>
-        <button id="clearBtn" disabled>Remove all</button>
-      </div>
-      <div class="status note" id="status"></div>
-      <ul class="queue" id="queue"></ul>
-    </section>
+    </div>
 
-    <section class="panel" aria-label="Result">
-      <div class="tabs" role="tablist">
-        <button role="tab" id="tabOne" aria-selected="true">Selected snap</button>
-        <button role="tab" id="tabAll" aria-selected="false">All snaps <span id="allCount"></span></button>
+    <div class="card qcard" id="qcard" hidden>
+      <div class="qhead"><span class="lbl">Snaps <span id="qCount" class="mono"></span></span><button class="btn" id="readBtn" hidden style="padding:4px 10px;font-size:12.5px">Retry failed</button></div>
+      <ul class="queue" id="queue"></ul>
+      <div class="qfoot">
+        <div class="total"><span class="lbl">Total</span><b id="total">₹0.00</b></div>
+        <div class="status" id="status" role="status"></div>
+        <div class="row">
+          <button class="btn primary grow" id="xlsBtn" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M6 10l6 6 6-6M4 20h16"/></svg>
+            Download Excel</button>
+          <button class="btn" id="clearBtn" disabled title="Remove all snaps">Clear</button>
+        </div>
       </div>
-      <div id="viewOne" class="stack">
-        <div class="label" id="resTitle">Extracted details</div>
-        <div class="fields" id="fields"></div>
-        <details id="rawBox"><summary class="label">Text read from the image</summary><pre id="raw"></pre></details>
+    </div>
+  </aside>
+
+  <section class="work">
+    <div id="emptyView" class="card empty">
+      <div class="mark" style="width:52px;height:52px;font-size:30px;border-radius:14px">₹</div>
+      <h2>Turn payment screenshots into a clean sheet</h2>
+      <p>Drop one or many snaps on the left. Amount, UTR, date, payer and payee are read automatically, and you can fix anything before exporting.</p>
+      <div class="steps">
+        <div class="step"><i>01</i><b>Add snaps</b><span>Drag, choose or paste images</span></div>
+        <div class="step"><i>02</i><b>Check</b><span>Click a field to see it marked on the image</span></div>
+        <div class="step"><i>03</i><b>Export</b><span>Excel, copy text or .txt</span></div>
       </div>
-      <div id="viewAll" class="stack" hidden>
-        <div class="tablewrap"><table id="allTable"></table></div>
+    </div>
+
+    <div id="mainView" hidden>
+      <div class="tabs" role="tablist" style="margin-bottom:14px">
+        <button role="tab" id="tabOne" aria-selected="true">Review</button>
+        <button role="tab" id="tabAll" aria-selected="false">All snaps<span class="n" id="allCount"></span></button>
+        <button role="tab" id="tabTxt" aria-selected="false">Text</button>
       </div>
-      <div class="label" id="txtLabel">Text output</div>
-      <textarea id="txt" spellcheck="false" aria-label="Text output" readonly></textarea>
-      <div class="row">
-        <button id="copyBtn">Copy text</button>
-        <button id="dlBtn">Download .txt</button>
-        <span class="note" id="actNote"></span>
+
+      <div id="viewOne" class="review">
+        <div class="card preview">
+          <div class="pv-head"><span class="pv-name" id="pvName"></span><span id="pvBadge"></span></div>
+          <div class="imgwrap" id="imgwrap"><div class="inner"><img id="pvImg" alt="Selected screenshot"><div class="hl-box" id="hlBox" hidden></div></div></div>
+          <div class="pv-hint">Click any field to see where it was read on the image.</div>
+        </div>
+        <div class="form" id="form"></div>
       </div>
-    </section>
-  </div>
-</div>
+
+      <div id="viewAll" class="card tablecard" hidden><div class="tablewrap"><table id="allTable"></table></div></div>
+
+      <div id="viewTxt" class="card textcard" hidden>
+        <div class="row"><span class="lbl" id="txtLabel">Text</span><span class="sp"></span>
+          <label class="row" style="gap:6px;font-size:13px;color:var(--muted);cursor:pointer"><input type="checkbox" id="txtAll" checked> All snaps</label>
+          <button class="btn" id="copyBtn">Copy</button><button class="btn" id="dlBtn">Download .txt</button></div>
+        <textarea id="txt" spellcheck="false" aria-label="Text output" readonly></textarea>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-/* ---- Payment text parser (pattern based, runs in the browser) ---- */
+/* ================= Payment text parser ================= */
 const HANDLE_BANK = {
   icici:"ICICI", okicici:"ICICI", ibl:"ICICI", hdfcbank:"HDFC", okhdfcbank:"HDFC", pthdfc:"HDFC", hdfc:"HDFC",
   sbi:"SBI", oksbi:"SBI", ptsbi:"SBI", axisbank:"Axis", okaxis:"Axis", axl:"Axis", ptaxis:"Axis", axis:"Axis",
@@ -154,10 +273,10 @@ const HANDLE_BANK = {
   paytm:"Paytm Payments Bank", pnb:"PNB", boi:"Bank of India", barodampay:"Bank of Baroda",
   unionbank:"Union Bank", uboi:"Union Bank", cnrb:"Canara Bank", idbi:"IDBI", idfcbank:"IDFC First", idfcfirst:"IDFC First",
   indus:"IndusInd", federal:"Federal Bank", fbl:"Federal Bank", rbl:"RBL", aubank:"AU Small Finance", jupiteraxis:"Axis",
-  freecharge:"Axis", apl:"Axis", yapl:"Yes Bank", ikwik:"Mobikwik", airtel:"Airtel Payments Bank", fam:"IDFC First", naviaxis:"Axis"
+  freecharge:"Axis", apl:"Axis", yapl:"Yes Bank", ikwik:"Mobikwik", airtel:"Airtel Payments Bank", fam:"IDFC First", naviaxis:"Axis",
+  upi:"NPCI (BHIM)", waicici:"ICICI", waaxis:"Axis", wahdfcbank:"HDFC", wasbi:"SBI", superyes:"Yes Bank", pingpay:"Axis"
 };
-const BANKS = ["State Bank of India","Punjab National Bank","Bank of India","Bank of Baroda","Union Bank of India","Central Bank of India","Indian Overseas Bank","Bank of Maharashtra","HDFC Bank","ICICI Bank","Axis Bank","Kotak Mahindra Bank","Canara Bank","IDBI Bank","IDFC First Bank","Yes Bank","IndusInd Bank","Federal Bank","RBL Bank","AU Small Finance Bank","Indian Bank","UCO Bank","Saraswat Bank","Cosmos Bank","Paytm Payments Bank","Airtel Payments Bank","Karnataka Bank","South Indian Bank","DBS Bank","Standard Chartered","Citibank","HSBC","Equitas","Ujjivan","Jana Small Finance","SBI","HDFC","ICICI","PNB","Kotak","IDFC"];
-// First 4 letters of an IFSC code / NEFT-RTGS UTR = the bank
+const BANKS = ["State Bank of India","Punjab National Bank","Bank of India","Bank of Baroda","Union Bank of India","Central Bank of India","Indian Overseas Bank","Bank of Maharashtra","HDFC Bank","ICICI Bank","Axis Bank","Kotak Mahindra Bank","Canara Bank","IDBI Bank","IDFC First Bank","Yes Bank","IndusInd Bank","Federal Bank","RBL Bank","AU Small Finance Bank","Indian Bank","UCO Bank","Saraswat Bank","Cosmos Bank","Paytm Payments Bank","Airtel Payments Bank","Karnataka Bank","South Indian Bank","DBS Bank","Standard Chartered","Citibank","HSBC","Equitas","Ujjivan","Jana Small Finance","Bandhan Bank","Karur Vysya Bank","City Union Bank","SBI","HDFC","ICICI","PNB","Kotak","IDFC"];
 const IFSC_BANK = {SBIN:"State Bank of India",HDFC:"HDFC Bank",ICIC:"ICICI Bank",UTIB:"Axis Bank",PUNB:"Punjab National Bank",BKID:"Bank of India",
   BARB:"Bank of Baroda",CNRB:"Canara Bank",UBIN:"Union Bank of India",KKBK:"Kotak Mahindra Bank",IDIB:"Indian Bank",IOBA:"Indian Overseas Bank",
   CBIN:"Central Bank of India",YESB:"Yes Bank",INDB:"IndusInd Bank",FDRL:"Federal Bank",RATN:"RBL Bank",IDFB:"IDFC First Bank",AUBL:"AU Small Finance Bank",
@@ -187,18 +306,19 @@ function to24(t){
   const m = t.match(/(\d{1,2})[:.](\d{2})(?::\d{2})?\s*([AaPp])?\.?\s*[Mm]?/); if(!m) return "";
   let h=+m[1]; const ap=(m[3]||"").toLowerCase();
   if (ap==="p" && h<12) h+=12; if (ap==="a" && h===12) h=0;
+  if (h>23 || +m[2]>59) return "";
   return String(h).padStart(2,"0")+":"+m[2];
 }
 function normDate(t, year){
   let m; const pad=n=>String(n).padStart(2,"0"); const fy=y=> y ? (String(y).length===2 ? "20"+y : y) : year;
   const mon = s => MONTHS[s.slice(0,4).toLowerCase()] || MONTHS[s.slice(0,3).toLowerCase()];
-  if ((m = t.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/))) return pad(m[1])+"/"+pad(m[2])+"/"+fy(m[3]);
+  const ok = (d,mo)=> +d>=1 && +d<=31 && +mo>=1 && +mo<=12;
+  if ((m = t.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/)) && ok(m[1],m[2])) return pad(m[1])+"/"+pad(m[2])+"/"+fy(m[3]);
   if ((m = t.match(/\b(\d{4})-(\d{2})-(\d{2})\b/))) return m[3]+"/"+m[2]+"/"+m[1];
-  if ((m = t.match(new RegExp("\\b(\\d{1,2})(?:st|nd|rd|th)?[\\s-]*("+MON_RE+")\\.?,?[\\s-]*(\\d{4}|\\d{2}(?![:.\\d]))?","i")))) return pad(m[1])+"/"+pad(mon(m[2]))+"/"+fy(m[3]);
-  if ((m = t.match(new RegExp("\\b("+MON_RE+")\\.?\\s+(\\d{1,2}),?\\s*(\\d{4})?","i")))) return pad(m[2])+"/"+pad(mon(m[1]))+"/"+fy(m[3]);
+  if ((m = t.match(new RegExp("\\b(\\d{1,2})(?:st|nd|rd|th)?[\\s-]*("+MON_RE+")\\.?,?[\\s-]*(\\d{4}|\\d{2}(?![:.\\d]))?","i"))) && ok(m[1],mon(m[2]))) return pad(m[1])+"/"+pad(mon(m[2]))+"/"+fy(m[3]);
+  if ((m = t.match(new RegExp("\\b("+MON_RE+")\\.?\\s+(\\d{1,2}),?\\s*(\\d{4})?","i"))) && ok(m[2],mon(m[1]))) return pad(m[2])+"/"+pad(mon(m[1]))+"/"+fy(m[3]);
   return "";
 }
-// A person/business name out of a noisy line: keep leading words, drop icons, emoji junk and amounts
 function nameFrom(line){
   if (!line) return "";
   const l = line.replace(/^\W*(paid\s*to|sent\s*to|credited\s*to|received\s*from|payment\s*from|debited\s*from|paid\s*by|to|from|payee|beneficiary|receiver|sender|payer)\b\s*:?/i,"");
@@ -209,53 +329,134 @@ function nameFrom(line){
     else if (out.length) break;
   }
   const n = out.join(" ").replace(/\.{2,}$/,"").trim();
-  if (!n || /^(upi|id|on|via|pay|google|phonepe|paytm|bank|transaction|successful|completed|payment|details)$/i.test(n)) return "";
-  if (/\b(transaction|details|successful|history|support|google pay)\b/i.test(n)) return "";
+  if (!n || /^(upi|id|on|via|pay|google|phonepe|paytm|bank|transaction|successful|completed|payment|details|banking|name)$/i.test(n)) return "";
+  if (/\b(transaction|details|successful|history|support|google pay|split|share|done)\b/i.test(n)) return "";
   return n;
 }
 function fixUpi(u){
   let [id, h=""] = u.split("@");
   id = id.replace(/^[eoc•·*.\s]{3,}(?=\d)/i, "XXXX");
-  h = h.replace(/[I1|]$/,"l").toLowerCase().replace(/^okshi$/,"oksbi").replace(/^ybli$/,"ybl");
+  h = h.replace(/[I1|]$/,"l").toLowerCase().replace(/^okshi$/,"oksbi").replace(/^ybli$/,"ybl").replace(/^0k/,"ok");
   if (!(h in HANDLE_BANK) && h.length>=2){ const ks = Object.keys(HANDLE_BANK).filter(k=>k.startsWith(h)); if (ks.length===1) h = ks[0]; }
   return id + "@" + h;
 }
-const validGroup = s => /^\d{1,3}(,\d{2})*,\d{3}(\.\d{1,2})?$/.test(s) || /^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(s);
-
-function findAmount(lines, notes){
-  // Tesseract has no ₹ glyph: it usually reads it as 2, %, 7, z or F in front of the number, or drops it.
-  const skip = /up\s*to|upto|limit|cashback|reward|offer|balance|\bKB\/s|%\s*$/i;
-  const cands = [];
-  lines.forEach((l, i)=>{
-    if (skip.test(l)) return;
-    const standalone = /^[\W₹%zZF]*[\d,]+(\.\d{1,2})?\s*$/.test(l);
-    for (const m of l.matchAll(/(?:^|\s)([₹%zZF<]?)(\d[\d,]*(?:\.\d{1,2})?)(?=\s|$)/g)){
-      const pre = m[1], num = m[2];
-      const hasGroup = num.includes(",") || /\.\d{2}$/.test(num);
-      if (!hasGroup && !standalone && !pre) continue;
-      if (!hasGroup && (num.length > 7 || /^0/.test(num))) continue;
-      if (num.includes(",") && !validGroup(num) && !validGroup(num.slice(1))) continue;
-      cands.push({num, pre, i});
-    }
-  });
-  if (!cands.length) return "";
-  const plain = new Set(cands.map(c=>c.num));
-  const vals = cands.map(c=>{
-    let v = c.num, guessed = false;
-    if (!c.pre && /^2/.test(v)){
-      const alt = v.slice(1);
-      const altOk = v.includes(",") ? validGroup(alt) : alt.length>=1 && !/^0/.test(alt);
-      const fullOk = v.includes(",") ? validGroup(v) : true;
-      if (altOk) { v = alt; guessed = !plain.has(alt); }
-    }
-    return {v: v.replace(/,/g,""), guessed, raw: c.pre + c.num};
-  });
-  const count = {}; vals.forEach(o=>count[o.v]=(count[o.v]||0)+1);
-  const best = vals.slice().sort((a,b)=>count[b.v]-count[a.v])[0];
-  if (best.guessed) notes["Check amount"] = `Read as "${best.raw}" — the ₹ sign is often read as a digit. Verify.`;
-  const n = parseFloat(best.v);
-  return isNaN(n) ? "" : n.toFixed(2);
+// OCR often swaps look-alike characters inside long numbers
+function fixDigits(s){
+  if (!s) return s;
+  const digits = (s.match(/\d/g)||[]).length;
+  if (digits / s.length < 0.7) return s;
+  return s.replace(/[Oo]/g,"0").replace(/[Il|]/g,"1").replace(/S/g,"5").replace(/B/g,"8").replace(/Z/g,"2");
 }
+const indianOK  = s => !s.includes(",") ? /^\d+(\.\d{1,2})?$/.test(s) : /^\d{1,2}(,\d{2})*,\d{3}(\.\d{1,2})?$/.test(s);
+const westernOK = s => /^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(s);
+const groupOK = s => indianOK(s) || westernOK(s);
+
+/* ---- Reading the ₹ sign ----
+   The English OCR model has no ₹ glyph, so it guesses: usually "7" or "2", sometimes %, z, F, & or nothing.
+   We look at the actual pixels of that first character: ₹ has two horizontal bars near the top,
+   "7" has one, and "2" has a bar along the bottom. */
+function otsu(hist, total){
+  let sum=0; for (let i=0;i<256;i++) sum+=i*hist[i];
+  let sB=0, wB=0, best=0, t=128;
+  for (let i=0;i<256;i++){ wB+=hist[i]; if(!wB) continue; const wF=total-wB; if(!wF) break;
+    sB+=i*hist[i]; const mB=sB/wB, mF=(sum-sB)/wF, v=wB*wF*(mB-mF)*(mB-mF); if (v>best){best=v;t=i;} }
+  return t;
+}
+function glyphKind(G, b){
+  if (!G || !b) return null;
+  const x0=Math.max(0,Math.floor(b.x0)), y0=Math.max(0,Math.floor(b.y0)), x1=Math.min(G.w,Math.ceil(b.x1)), y1=Math.min(G.h,Math.ceil(b.y1));
+  const w=x1-x0, h=y1-y0; if (w<3 || h<8) return null;
+  const hist=new Array(256).fill(0);
+  for (let y=y0;y<y1;y++) for (let x=x0;x<x1;x++) hist[G.g[y*G.w+x]]++;
+  const t = otsu(hist, w*h);
+  const rows=[];
+  for (let y=y0;y<y1;y++){ let c=0; for (let x=x0;x<x1;x++) if (G.g[y*G.w+x] <= t) c++; rows.push(c/w); }
+  // trim blank rows that sometimes pad the box
+  let a=0, z=rows.length-1; while (a<z && rows[a]<0.08) a++; while (z>a && rows[z]<0.08) z--;
+  const R = rows.slice(a, z+1), H = R.length; if (H<8) return null;
+  const BAR = 0.6, bands=[]; let s=-1;
+  for (let i=0;i<H;i++){ if (R[i]>=BAR){ if(s<0) s=i; } else if (s>=0){ bands.push([s,i-1]); s=-1; } }
+  if (s>=0) bands.push([s,H-1]);
+  const mid = bb => ((bb[0]+bb[1])/2)/H;
+  const top = bands.filter(bb=>mid(bb)<0.55), bottom = bands.filter(bb=>mid(bb)>0.78);
+  if (bottom.length) return "digit";                 // "2" (bar at the bottom)
+  if (top.length>=2){
+    // the two bars must be separated by a real gap, not one thick stroke
+    const gap = R.slice(top[0][1]+1, top[1][0]); if (gap.length && Math.min(...gap) < 0.45) return "rupee";
+  }
+  if (top.length===1){
+    const th=(top[0][1]-top[0][0]+1)/H;
+    if (th>0.3) return null;                         // bars merged at tiny sizes: can't tell
+    return "digit";                                  // "7" (one bar)
+  }
+  return null;
+}
+
+const AMT_LABEL = /\b(amount|amt|paid|debited|credited|total|sent|received|transferred|you\s+paid|money\s+sent|payment\s+of|transfer\s+of)\b/i;
+const AMT_SKIP = /up\s*to|upto|limit|cashback|reward|offer|balance|\bKB\/s|scratch|coins?\b|points?\b|\bfee\b.*waived/i;
+const SYM_RE = "Rs\\.?|INR|[₹%zZF<&?=¥€£$]|X(?=\\d)";
+
+function findAmount(geo, notes, G){
+  const hs=[]; geo.forEach(L=>L.words.forEach(w=>{ if (w.h) hs.push(w.h); }));
+  hs.sort((a,b)=>a-b); const med = hs.length ? hs[hs.length>>1] : 0;
+  const cands=[];
+  geo.forEach((L, li)=>{
+    if (AMT_SKIP.test(L.text)) return;
+    const prev = (geo[li-1]||{}).text || "";
+    const labeled = AMT_LABEL.test(L.text) || (AMT_LABEL.test(prev) && !/\d/.test(prev));
+    const dateLine = /\b20\d{2}\b/.test(L.text) || new RegExp("\\b\\d{1,2}\\s*"+MON_RE+"\\b","i").test(L.text) || /\b\d{1,2}[:.]\d{2}\b/.test(L.text);
+    const ws = L.words, standalone = ws.length<=2;
+    ws.forEach((w, wi)=>{
+      const t = (w.text||"").replace(/^[(\[{"'“]+/,"").replace(/[)\]}"'”:;]+$/,"").replace(/\/-$/,"").replace(/,$/,"");
+      const m = t.match(new RegExp("^("+SYM_RE+")?(\\d[\\d,]*(?:\\.\\d{1,2})?)$","i"));
+      if (!m) return;
+      let pre = m[1]||"", num = m[2], preWord = null;
+      if (!pre && wi>0 && new RegExp("^(?:"+SYM_RE+"|7|2)$","i").test(ws[wi-1].text||"")){ pre = ws[wi-1].text; preWord = ws[wi-1]; }
+      const hasGroup = num.includes(",") || /\.\d{2}$/.test(num);
+      const hero = !!(med && w.h && w.h >= 1.45*med);
+      if (!hasGroup && !pre && !standalone && !hero && !labeled) return;
+      if (!hasGroup && (num.length > 8 || /^0\d/.test(num))) return;
+      if (num.includes(",") && !groupOK(num) && !groupOK(num.slice(1))) return;
+      if (dateLine && !pre && !hasGroup && !hero) return;
+      if (/^(19|20)\d{2}$/.test(num) && !pre && !hero) return;
+      if (/^\d{1,2}$/.test(num) && !pre && !hero) return;
+      cands.push({w, li, num, pre, preWord, hero, labeled, standalone, text: (preWord?preWord.text+" ":"")+w.text});
+    });
+  });
+  if (!cands.length) return null;
+
+  const plain = new Set(cands.filter(c=>c.pre || !/^[72]/.test(c.num)).map(c=>c.num.replace(/,/g,"")));
+  for (const c of cands){
+    c.val = c.num; c.fixed = false; c.unsure = false;
+    // separate token in front of the number ("7 500")
+    if (c.preWord && /^[72]$/.test(c.pre)){
+      const k = glyphKind(G, c.preWord.bbox);
+      if (k==="digit"){ c.pre=""; c.preWord=null; } else { c.fixed = true; c.unsure = k!=="rupee"; c.pre="₹"; }
+    }
+    // ₹ glued to the number ("7500" for ₹500)
+    if (!c.pre && /^[72][1-9]/.test(c.num)){
+      const alt = c.num.slice(1);
+      const sym = c.w.symbols && c.w.symbols[0];
+      const k = sym && sym.text===c.num[0] ? glyphKind(G, sym.bbox) : null;
+      let strip = k==="rupee" ? true : k==="digit" ? false : null;
+      if (strip===null && c.num.includes(",")){ const fi=indianOK(c.num), ai=indianOK(alt); if (ai&&!fi) strip=true; else if (fi&&!ai) strip=false; }
+      if (strip===null){ const a=alt.replace(/,/g,""), f=c.num.replace(/,/g,""); if (plain.has(a)&&!plain.has(f)) strip=true; else if (plain.has(f)&&!plain.has(a)) strip=false; }
+      if (strip===null && c.hero){ strip=true; c.unsure=true; }
+      if (strip && groupOK(alt)){ c.val=alt; c.fixed=true; c.pre="₹"; }
+    }
+    c.v = c.val.replace(/,/g,"");
+  }
+  const cnt={}; cands.forEach(c=>cnt[c.v]=(cnt[c.v]||0)+1);
+  cands.forEach(c=>{ c.score = 2*cnt[c.v] + (c.hero?5:0) + (c.labeled?3:0) + (c.pre?2:0) + (c.standalone?1:0) + (/\.\d{2}$/.test(c.v)?0.5:0); });
+  const best = cands.slice().sort((a,b)=>b.score-a.score)[0];
+  const n = parseFloat(best.v); if (isNaN(n) || n<=0) return null;
+  // the same value read elsewhere without doubt confirms a guess
+  const confirmed = cands.some(c=>c!==best && c.v===best.v && !c.unsure);
+  if (best.unsure && !confirmed) notes["Check amount"] = `Read as “${best.text}”. The first character looked like the ₹ sign, so it was taken as ₹${n.toLocaleString("en-IN",{minimumFractionDigits:2})}. Please verify.`;
+  const box = best.preWord ? union(best.preWord.bbox, best.w.bbox) : best.w.bbox;
+  return {value:n.toFixed(2), box, fixedFrom: best.fixed ? best.text : "", unsure: best.unsure && !confirmed};
+}
+function union(a,b){ if(!a) return b; if(!b) return a; return {x0:Math.min(a.x0,b.x0),y0:Math.min(a.y0,b.y0),x1:Math.max(a.x1,b.x1),y1:Math.max(a.y1,b.y1)}; }
 
 function valueAfterLabel(lines, labelRe, valueRe){
   for (let i=0;i<lines.length;i++){
@@ -267,13 +468,13 @@ function valueAfterLabel(lines, labelRe, valueRe){
   return "";
 }
 
-function parsePayment(raw, year){
+function parsePayment(raw, year, geo, G){
   year = year || new Date().getFullYear();
   const lines = raw.replace(/\r/g,"").split("\n").map(l=>l.trim()).filter(Boolean);
+  if (!geo || !geo.length) geo = lines.map(t=>({text:t, words:t.split(/\s+/).map(x=>({text:x}))}));
   const all = lines.join("\n");
-  const d = {}, notes = {};
+  const d = {}, notes = {}, meta = {};
 
-  // App / source — explicit labels first
   d.app_or_source =
     /PhonePe\s+Transaction\s+ID/i.test(all) ? "PhonePe" :
     /Google\s+transaction\s+ID/i.test(all) ? "Google Pay" :
@@ -281,19 +482,23 @@ function parsePayment(raw, year){
     /\bpop\b/i.test(all) ? "POP" :
     /phone\s?pe/i.test(all) ? "PhonePe" : /google\s?pay|\bg\s?pay\b/i.test(all) ? "Google Pay" :
     /\bbhim\b/i.test(all) ? "BHIM" : /amazon\s?pay/i.test(all) ? "Amazon Pay" : /\bcred\b/i.test(all) ? "CRED" :
-    /mobikwik/i.test(all) ? "MobiKwik" : /yono/i.test(all) ? "SBI YONO" : "";
+    /mobikwik/i.test(all) ? "MobiKwik" : /yono/i.test(all) ? "SBI YONO" : /super\.?money/i.test(all) ? "super.money" : /navi\b/i.test(all) ? "Navi" : "";
 
-  // Status
   const st = all.match(/\b((?:Payment|Transaction|Transfer|Money\s+Sent)\s*(?:was\s+)?(?:Successful(?:ly)?|Success|Completed|Complete|Failed|Pending|Processing|Declined))\b/i);
-  d.status = st ? st[1].replace(/\s+/g," ") : /\bcompleted\b/i.test(all) ? "Completed" : /\bsuccess(ful)?\b/i.test(all) ? "Successful" : /\bfailed\b/i.test(all) ? "Failed" : /\bpending\b/i.test(all) ? "Pending" : "";
+  d.status = st ? st[1].replace(/\s+/g," ") : /\bcompleted\b/i.test(all) ? "Completed" : /\bsuccess(ful)?\b/i.test(all) ? "Successful" : /\bfailed\b/i.test(all) ? "Failed" : /\bpending\b/i.test(all) ? "Pending" : /\bpaid\b/i.test(all) ? "Paid" : "";
 
-  // Amount: words beat digits
+  // Amount: words beat digits; digits use font size, labels, ₹ shape and repeats
   const w = all.match(/((?:Rupees|INR)\s+[A-Za-z\s-]+?\s+Only)/i) || all.match(/((?:(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|lakhs?|lac|crores?|and)[\s-]+)+Rupees(?:\s+and\s+[A-Za-z\s-]+?Paise)?\s+Only)/i);
   d.amount_in_words = w ? w[1].replace(/\s+/g," ") : "";
   const wn = d.amount_in_words ? wordsToNumber(d.amount_in_words) : null;
-  d.amount = wn ? wn.toFixed(2) : findAmount(lines, notes);
+  const amt = findAmount(geo, notes, G);
+  if (wn){
+    d.amount = wn.toFixed(2);
+    if (amt && amt.value===d.amount){ meta.amountBox = amt.box; meta.fixedFrom = amt.fixedFrom; delete notes["Check amount"]; }
+    else delete notes["Check amount"];
+  } else if (amt){ d.amount = amt.value; meta.amountBox = amt.box; meta.fixedFrom = amt.fixedFrom; }
+  else d.amount = "";
 
-  // IDs: Txn / Transaction ID (not "UPI transaction ID") -> transaction_id; UTR / RRN / Ref / UPI transaction ID -> reference_no
   const ID = /[A-Z0-9]{8,35}/i;
   d.transaction_id = "";
   for (let i=0;i<lines.length;i++){
@@ -304,15 +509,16 @@ function parsePayment(raw, year){
   }
   d.reference_no =
     valueAfterLabel(lines, /\b(?:UTR|RRN)(?:\s*(?:No|Number))?\.?/i, /[A-Z0-9]{10,22}/i) ||
-    valueAfterLabel(lines, /\bUPI\s*(?:Ref(?:erence)?|transaction|txn)\s*(?:ID|No|Number)?\.?/i, /\d{10,16}/) ||
+    valueAfterLabel(lines, /\bUPI\s*(?:Ref(?:erence)?|transaction|txn)\s*(?:ID|No|Number)?\.?/i, /[\dOoIlSB]{10,16}/) ||
     valueAfterLabel(lines, /\b(?:Bank\s*)?Ref(?:erence)?\.?\s*(?:No|Number|ID)?\.?(?=\s|:|$)/i, /[A-Z0-9]*\d{6,}[A-Z0-9]*/i);
+  d.reference_no = fixDigits(d.reference_no);
+  if (/^[A-Z]{4}/i.test(d.reference_no)) d.reference_no = d.reference_no.slice(0,4).toUpperCase() + fixDigits(d.reference_no.slice(4));
   if (d.transaction_id && d.transaction_id===d.reference_no) d.reference_no = "";
+  if (d.reference_no && /^\d+$/.test(d.reference_no) && d.reference_no.length!==12 && /upi/i.test(all) && !/IMPS|NEFT|RTGS/i.test(all)) notes["Check reference"] = `UPI reference numbers have 12 digits; this one has ${d.reference_no.length}.`;
 
-  // Mode
   d.payment_mode = /\bIMPS\b/i.test(all)?"IMPS":/\bNEFT\b/i.test(all)?"NEFT":/\bRTGS\b/i.test(all)?"RTGS":
     (/\bUPI\b|@[a-z]{2,}/i.test(all) || d.app_or_source) ? "UPI" : /\bcheque\b/i.test(all)?"Cheque":/\bcard\b/i.test(all)?"Card":"";
 
-  // Sections
   const isTo   = l => /^\W*(paid\s*to|sent\s*to|credited\s*to|beneficiary|payee|receiver|to\b)/i.test(l) && !/^\W*sent\s*to\s*:?\s*(g\s?pay|google|phonepe|paytm|bhim)/i.test(l);
   const isFrom = l => /^\W*(from\b|debited\s*from|paid\s*by|sender|payer|received\s*from)/i.test(l);
   const received = lines.slice(0,4).some(l=>/^\W*(from\s+[A-Za-z]|received\s*from|payment\s*received)/i.test(l)) && !lines.some(l=>/^\W*paid\s*to\b/i.test(l));
@@ -331,18 +537,15 @@ function parsePayment(raw, year){
     if (firstUpi>=0){ d.payee_upi_or_account = fixUpi(lines[firstUpi].match(upiRe)[1]); if (!d.payee_name) d.payee_name = nameFrom(lines[firstUpi-1]); }
   }
   if (!d.payee_upi_or_account){ const a = all.match(/(?:A\/?c|Account)\s*(?:No|Number)?\.?\s*[:#-]?\s*([X*x•\d]{4,20})/i); if (a) d.payee_upi_or_account = a[1]; }
-  // "To: NAME" beats a short first name from the header
   const toColon = lines.find(l=>/^\W*to\s*:/i.test(l)); if (toColon && nameFrom(toColon).length > d.payee_name.length) d.payee_name = nameFrom(toColon);
 
   d.payer_name = fromLbl>=0 ? nameNear(fromLbl) : "";
   d.payer_upi = "";
   for (const f of fromIdxs){ const u = upiNear(f, 2); if (u && u!==d.payee_upi_or_account){ d.payer_upi = u; break; } }
-  if (!d.payer_upi && received) d.payer_upi = "";
   const deb = lines.findIndex(l=>/debited\s*from/i.test(l));
   const acctScope = deb>=0 ? lines.slice(deb, deb+3).join("\n") : fromLbl>=0 ? lines.slice(fromLbl, fromLbl+4).join("\n") : "";
   d.payer_account = (acctScope.match(/[X*x•]{2,}\s*(\d{4})\b/) || acctScope.match(/\b[A-Za-z ]*Bank[^\n]*?[\s-](\d{4})\b/i) || [])[1] || "";
 
-  // Bank names written on the snap
   let bankLine = -1, bankName = "";
   for (let i=0;i<lines.length && bankLine<0;i++) for (const b of BANKS){
     const re = new RegExp("\\b"+b.replace(/ /g,"\\s+")+"\\b","i");
@@ -357,7 +560,6 @@ function parsePayment(raw, year){
     else { d.payer_bank = bankName; if (last4 && !d.payer_account) d.payer_account = last4; }
   }
 
-  // ---- Bank receipts / payment advices (NEFT, RTGS, IMPS, net banking) ----
   const kv = (re) => { for (const l of lines){ const m = l.match(re); if (m){ const v = l.slice(m.index+m[0].length).replace(/^[\s:;.-]+/,"").trim(); if (v) return v; } } return ""; };
   const rName = kv(/\b(?:Remitter|Sender|Payer|Debtor)(?:'s|’s)?\s*Name\b/i);
   const bName = kv(/\b(?:Beneficiary|Payee|Receiver|Creditor)(?:'s|’s)?\s*Name\b/i);
@@ -371,7 +573,6 @@ function parsePayment(raw, year){
   const mode = kv(/\b(?:Transfer\s*Mode|Payment\s*(?:Product|Mode|Type)|Mode\s*of\s*(?:Payment|Transfer))\b/i);
   if (/\b(NEFT|RTGS|IMPS|UPI)\b/i.test(mode)) d.payment_mode = mode.match(/\b(NEFT|RTGS|IMPS|UPI)\b/i)[1].toUpperCase();
 
-  // "To" / "From" blocks: name may wrap to a second line; bank name and masked A/c sit under the name
   const LABEL = /^\W*(to|from|amount|transfer|note|remarks?|reference|utr|date|mode|status|current\s*a\/?c|savings\s*a\/?c|a\/?c|account|ifsc|debited|credited)\b/i;
   const block = (i) => { const out=[]; for (let k=i+1;k<Math.min(lines.length,i+6);k++){ if (k>i+1 && LABEL.test(lines[k]) && !/a\/?c|account/i.test(lines[k])) break; out.push(lines[k]); } return out; };
   const bankIn = (ls) => { for (const l of ls) for (const b of BANKS){ const re = new RegExp("\\b"+b.replace(/ /g,"\\s+")+"\\b","i"); if (re.test(l) && !upiRe.test(l)) return l.replace(/^[^A-Za-z]+/,"").replace(/\s+\d{4}\s*$/,"").trim(); } return ""; };
@@ -390,28 +591,23 @@ function parsePayment(raw, year){
     const m4 = maskedIn(bl); if (m4) d.payer_account = m4;
   }
 
-  // IFSC codes printed on the slip (e.g. ICIC0004017 next to the beneficiary account) -> receiver's bank
   const ifscs = [...all.matchAll(/\b([A-Z]{4})0([A-Z0-9]{6})\b/g)].filter(m=>IFSC_BANK[m[1]]);
   if (ifscs.length && !notes["Receiver bank from"]){
     const benIfsc = ifscs.find(m=>{ const l = lines.find(x=>x.includes(m[0]))||""; return !/remitter|sender|debit|from/i.test(l); });
     if (benIfsc){ d.payee_bank = IFSC_BANK[benIfsc[1]]; notes["Receiver bank from"] = "IFSC " + benIfsc[0]; }
   }
-
-  // Payer's bank, most reliable first
   if (!notes["Payer bank from"]){
     const utr = (d.reference_no || "").toUpperCase();
     const code = utr.slice(0,4);
     if (/^[A-Z]{4}/.test(utr) && IFSC_BANK[code] && d.payment_mode !== "UPI"){
       d.payer_bank = IFSC_BANK[code]; notes["Payer bank from"] = "UTR starts with " + code + " (sending bank's code)";
     } else if (!received && !d.payer_bank) {
-      // Letterhead: a bank name in the first two lines means the receipt came from the payer's own bank
       const head = bankIn(lines.slice(0,2));
       if (head && d.payment_mode !== "UPI"){ d.payer_bank = head.replace(/\s*BANK\b.*$/i," Bank").replace(/^(\w+) Bank$/i,(x,a)=>IFSC_BANK[Object.keys(IFSC_BANK).find(k=>IFSC_BANK[k].toUpperCase().startsWith(a.toUpperCase()))]||x); notes["Payer bank from"] = "bank letterhead on the receipt"; }
     }
   }
-  if (!d.payer_bank && d.payer_upi){ const h = d.payer_upi.split("@")[1]; if (HANDLE_BANK[h]) notes["Payer UPI handle"] = "@" + h + " is " + HANDLE_BANK[h] + "'s UPI handle; the account itself may be in another bank";  }
+  if (!d.payer_bank && d.payer_upi){ const h = d.payer_upi.split("@")[1]; if (HANDLE_BANK[h]) notes["Payer UPI handle"] = "@" + h + " is " + HANDLE_BANK[h] + "'s UPI handle; the account itself may be in another bank"; }
 
-  // Date / time: prefer lines with a date, ignore the phone status bar
   const dateLine = (d.__dateLine && normDate(d.__dateLine, year) ? d.__dateLine : "") || lines.find(l=>normDate(l, year) && /\d{1,2}[:.]\d{2}/.test(l)) || lines.find(l=>normDate(l, year)) || "";
   d.date = normDate(dateLine, year);
   if (d.date && !/\b20\d{2}\b|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2}\b/.test(dateLine)) notes["Year"] = "Not shown on snap; assumed " + year;
@@ -430,174 +626,313 @@ function parsePayment(raw, year){
   d.payer_bank = canon(d.payer_bank); d.payee_bank = canon(d.payee_bank);
   delete d.__dateLine;
   d.other = notes;
+  Object.defineProperty(d, "_meta", {value: meta, enumerable:false, writable:true});
   return d;
 }
 
-
+/* ================= App ================= */
 const FIELDS = [
-  ["payment_mode","Payment Mode"],["status","Status"],
-  ["amount","Amount (₹)"],["amount_in_words","Amount in Words"],
+  ["amount","Amount (₹)"],["amount_in_words","Amount in Words"],["status","Status"],["payment_mode","Payment Mode"],
   ["date","Date"],["time","Time"],
   ["reference_no","Reference / UTR No."],["transaction_id","Transaction ID"],
-  ["payee_name","Paid To (Name)"],["payee_upi_or_account","Paid To UPI / A/c"],
-  ["payee_bank","Receiver Bank"],["payer_name","Paid By (Name)"],
-  ["payer_upi","Paid By UPI"],["payer_bank","Payer Bank"],
-  ["payer_account","Payer A/c (last digits)"],["app_or_source","App / Source"],
-  ["remarks","Remarks"]
+  ["payee_name","Paid To (Name)"],["payee_upi_or_account","Paid To UPI / A/c"],["payee_bank","Receiver Bank"],
+  ["payer_name","Paid By (Name)"],["payer_upi","Paid By UPI"],["payer_bank","Payer Bank"],["payer_account","Payer A/c (last digits)"],
+  ["app_or_source","App / Source"],["remarks","Remarks"]
 ];
-const HL = new Set(["amount","reference_no","transaction_id","date","time","payee_bank","payment_mode"]);
-let items = [], selId = null, view = "one", busy = false;
+const LABEL_OF = Object.fromEntries(FIELDS);
+const GROUPS = [
+  ["When & how", ["date","time","payment_mode","status"]],
+  ["References", ["reference_no","transaction_id","app_or_source"]],
+  ["Paid to", ["payee_name","payee_upi_or_account","payee_bank"]],
+  ["Paid by", ["payer_name","payer_upi","payer_bank","payer_account"]],
+  ["Other", ["amount_in_words","remarks"], true]
+];
+const KEY = new Set(["amount","date","reference_no","payee_name"]);
+const NOTE_FOR = {"Check amount":"amount","Check reference":"reference_no","Year":"date","Receiver bank from":"payee_bank","Payer bank from":"payer_bank","Payer UPI handle":"payer_upi"};
+
+let items = [], selId = null, view = "one", busy = false, current = null;
 const $ = id => document.getElementById(id);
 const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const inr = v => { const n=+v; return isNaN(n)||v==="" ? "" : "₹" + n.toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}); };
 const doneItems = () => items.filter(i=>i.state==="done");
 const noteText = d => Object.entries(d.other||{}).filter(([,v])=>v).map(([k,v])=>k+": "+v).join("; ");
+const needsCheck = it => it.state==="done" && (!!(it.data.other||{})["Check amount"] || !it.data.amount || (!it.data.reference_no && !it.data.transaction_id));
 
 function toText(it, idx){
-  const d = it.data || {}; const lines = [];
-  lines.push(`=== Snap ${idx!=null?idx+1+" · ":""}${it.name} ===`);
+  const d = it.data || {}; const out = [];
+  out.push(`=== Snap ${idx!=null?idx+1+" · ":""}${it.name} ===`);
   const w = Math.max(...FIELDS.map(f=>f[1].length));
-  for (const [k,l] of FIELDS) if (d[k]) lines.push(l.padEnd(w," ")+" : "+d[k]);
+  for (const [k,l] of FIELDS) if (d[k]) out.push(l.padEnd(w," ")+" : "+d[k]);
   const o = d.other||{}; const ks = Object.keys(o).filter(k=>o[k]);
-  if (ks.length){ lines.push("--- Notes ---"); for (const k of ks) lines.push(k+" : "+o[k]); }
-  return lines.join("\n");
+  if (ks.length){ out.push("--- Notes ---"); for (const k of ks) out.push(k+" : "+o[k]); }
+  return out.join("\n");
 }
-const allText = () => doneItems().map((it,i)=>toText(it,i)).join("\n\n");
+
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.classList.add("on"); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("on"),2200); }
+function status(msg,bad){ const s=$("status"); s.textContent=msg||""; s.className="status"+(bad?" err":""); }
 
 function removeItem(id){
-  const i = items.findIndex(x=>x.id===id); if (i<0) return;
-  if (items[i].state==="run") return;
+  const i = items.findIndex(x=>x.id===id); if (i<0 || items[i].state==="run") return;
   URL.revokeObjectURL(items[i].url); items.splice(i,1);
   if (selId===id) selId = (items[i]||items[i-1]||{}).id || null;
   render();
 }
+
 function renderQueue(){
   const q = $("queue"); q.innerHTML = "";
   items.forEach(it=>{
     const li = document.createElement("li");
-    li.className = "qi"+(it.id===selId?" sel":""); li.tabIndex = 0;
-    const pill = {done:["done","Read"],wait:["wait","Waiting"],run:["run","Reading…"],err:["err","Failed"]}[it.state];
-    const sub = it.data?.amount ? "₹"+it.data.amount+(it.data.reference_no||it.data.transaction_id?" · "+(it.data.reference_no||it.data.transaction_id):"") : (it.err||"");
-    li.innerHTML = `<img src="${it.url}" alt=""><div style="min-width:0"><div class="nm">${esc(it.name)}</div><div class="sub">${esc(sub)}</div></div><span class="pill ${pill[0]}">${pill[1]}</span><button class="x" title="Remove this image" aria-label="Remove ${esc(it.name)}"${it.state==="run"?" disabled":""}>×</button>`;
+    li.className = "qi"+(it.id===selId?" sel":""); li.tabIndex = 0; li.dataset.id = it.id;
+    const d = it.data||{};
+    const dot = it.state==="done" ? (needsCheck(it)?"warn":"ok") : it.state==="err" ? "err" : "wait";
+    const top = it.state==="done" ? (d.amount ? inr(d.amount) : "Amount not found") : it.state==="run" ? "Reading…" : it.state==="err" ? "Couldn't read" : "Waiting";
+    const sub = it.state==="done" ? [d.payee_name, d.reference_no||d.transaction_id].filter(Boolean).join(" · ") || it.name : it.state==="err" ? it.err : it.name;
+    li.innerHTML = `<img src="${it.url}" alt=""><div style="min-width:0"><div class="amt"><span class="dot ${dot}"></span>${esc(top)}</div><div class="sub">${esc(sub)}</div></div><button class="x" title="Remove" aria-label="Remove ${esc(it.name)}"${it.state==="run"?" disabled":""}>×</button>${it.state==="run"?`<div class="bar"><i style="width:${Math.round((it.progress||0)*100)}%"></i></div>`:""}`;
     li.onclick = e=>{ if (e.target.closest(".x")) return; selId=it.id; setView("one"); render(); };
     li.querySelector(".x").onclick = e=>{ e.stopPropagation(); removeItem(it.id); };
-    li.onkeydown = e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); li.click(); } if(e.key==="Delete"){ removeItem(it.id); } };
+    li.onkeydown = e=>{
+      if (e.key==="Enter"||e.key===" "){ e.preventDefault(); li.click(); }
+      else if (e.key==="Delete"||e.key==="Backspace"){ removeItem(it.id); }
+      else if (e.key==="ArrowDown"||e.key==="ArrowUp"){ e.preventDefault(); const n = li[e.key==="ArrowDown"?"nextElementSibling":"previousElementSibling"]; if (n){ selId=n.dataset.id; render(); q.querySelector(`[data-id="${n.dataset.id}"]`)?.focus(); } }
+    };
     q.appendChild(li);
   });
+  const sel = q.querySelector(".sel"); if (sel) sel.scrollIntoView({block:"nearest"});
+  const done = doneItems();
+  $("qcard").hidden = !items.length;
+  $("emptyView").hidden = !!items.length; $("mainView").hidden = !items.length;
+  $("qCount").textContent = items.length ? `· ${items.length}` : "";
   $("readBtn").hidden = busy || !items.some(i=>i.state==="err");
   $("clearBtn").disabled = busy || !items.length;
-  $("xlsBtn").disabled = !doneItems().length;
-  const n = doneItems().length; $("allCount").textContent = n ? "("+n+")" : "";
+  $("xlsBtn").disabled = !done.length;
+  $("allCount").textContent = done.length ? done.length : "";
+  const sum = done.reduce((s,i)=>s+(+i.data.amount||0),0);
+  $("total").textContent = inr(sum.toFixed(2)) || "₹0.00";
 }
+
 function renderAll(){
   const rows = doneItems();
-  const head = `<tr><th>#</th><th>File</th>${FIELDS.map(f=>`<th>${esc(f[1])}</th>`).join("")}<th>Notes</th></tr>`;
-  const body = rows.map((it,i)=>`<tr data-id="${it.id}"><td>${i+1}</td><td>${esc(it.name)}</td>${FIELDS.map(([k])=>`<td class="${HL.has(k)?"hl":""}">${esc(it.data[k]||"")}</td>`).join("")}<td class="nt">${esc(noteText(it.data))}</td></tr>`).join("");
-  $("allTable").innerHTML = rows.length ? head+body : `<tr><td class="empty-state">No snaps read yet.</td></tr>`;
+  const cols = ["amount","date","time","reference_no","transaction_id","payee_name","payee_upi_or_account","payee_bank","payer_name","payer_upi","payer_bank","payer_account","payment_mode","status","app_or_source","remarks"];
+  const head = `<thead><tr><th>#</th><th>File</th>${cols.map(k=>`<th>${esc(LABEL_OF[k])}</th>`).join("")}<th>Notes</th></tr></thead>`;
+  const body = rows.map((it,i)=>`<tr data-id="${it.id}"><td>${i+1}</td><td>${esc(it.name)}</td>${cols.map(k=>`<td class="${k==="amount"?"num":""}">${esc(k==="amount"?inr(it.data[k]):it.data[k]||"")}</td>`).join("")}<td class="nt">${esc(noteText(it.data))}</td></tr>`).join("");
+  const sum = rows.reduce((s,i)=>s+(+i.data.amount||0),0);
+  const foot = rows.length>1 ? `<tfoot><tr><td></td><td>Total</td><td class="num">${inr(sum.toFixed(2))}</td><td colspan="${cols.length}"></td></tr></tfoot>` : "";
+  $("allTable").innerHTML = rows.length ? head+"<tbody>"+body+"</tbody>"+foot : `<tbody><tr><td style="padding:40px;text-align:center;color:var(--muted);font-family:var(--f)">No snaps read yet.</td></tr></tbody>`;
   $("allTable").querySelectorAll("tr[data-id]").forEach(tr=>tr.onclick=()=>{ selId=tr.dataset.id; setView("one"); render(); });
-  $("txt").value = allText();
 }
-function renderResult(){
-  $("viewOne").hidden = view!=="one"; $("viewAll").hidden = view!=="all";
-  if (view==="all"){ $("txtLabel").textContent = "All snaps as text"; renderAll(); return; }
-  $("txtLabel").textContent = "Text output";
-  const it = items.find(i=>i.id===selId);
-  if (!it){
-    $("resTitle").textContent = "Extracted details";
-    $("fields").innerHTML = `<div class="f empty-state">Add a screenshot on the left. Its details will appear here.</div>`;
-    $("rawBox").hidden = true; $("txt").value = ""; return;
-  }
-  $("resTitle").textContent = "Extracted details · " + it.name;
-  const d = it.data || {}; const dis = it.state!=="done" ? " disabled" : "";
-  const warnAmt = d.other && d.other["Check amount"];
-  $("fields").innerHTML = FIELDS.map(([k,l])=>
-    `<label class="f${k==="remarks"?" wide":""}${HL.has(k)?" hl":""}${it.state==="done"&&!d[k]&&HL.has(k)?" miss":""}${k==="amount"&&warnAmt?" miss":""}"><span class="k">${esc(l)}</span><input class="v" data-k="${k}" id="fld_${k}" value="${esc(d[k]||"")}" placeholder="${it.state==="run"?"reading…":"—"}"${dis}></label>`
-  ).join("") + Object.entries(d.other||{}).filter(([,v])=>v).map(([k,v])=>
-    `<div class="f note-f"><span class="k">${esc(k)}</span><div class="v">${esc(v)}</div></div>`).join("");
-  $("fields").querySelectorAll("input").forEach(inp=>inp.oninput=()=>{ d[inp.dataset.k]=inp.value; if (inp.dataset.k==="amount" && d.other) delete d.other["Check amount"]; it.data=d; $("txt").value=toText(it); renderQueue(); });
-  $("rawBox").hidden = !it.raw; $("raw").textContent = it.raw || "";
-  $("txt").value = it.state==="done" ? toText(it) : it.state==="err" ? "Could not read this snap: "+(it.err||"") : "";
-}
-function render(){ renderQueue(); renderResult(); }
-function setView(v){ view=v; $("tabOne").setAttribute("aria-selected",v==="one"); $("tabAll").setAttribute("aria-selected",v==="all"); renderResult(); }
-$("tabOne").onclick=()=>setView("one"); $("tabAll").onclick=()=>setView("all");
-function status(msg,bad){ const s=$("status"); s.textContent=msg||""; s.className="status note"+(bad?" err":""); }
 
+function renderText(){
+  const it = items.find(i=>i.id===selId);
+  const all = $("txtAll").checked;
+  $("txtLabel").textContent = all ? "All snaps as text" : "This snap as text";
+  $("txt").value = all ? doneItems().map((x,i)=>toText(x,i)).join("\n\n") : (it && it.state==="done" ? toText(it) : "");
+}
+
+function fieldHTML(it, k){
+  const d = it.data||{}, done = it.state==="done";
+  const notes = Object.entries(d.other||{}).filter(([nk,v])=>v && NOTE_FOR[nk]===k);
+  const miss = done && !d[k] && KEY.has(k);
+  return `<label class="fl${miss?" miss":""}" data-k="${k}"><span class="k">${esc(LABEL_OF[k])}</span><input data-k="${k}" value="${esc(d[k]||"")}" placeholder="${it.state==="run"?"reading…":miss?"Not found — type it in":"—"}"${done?"":" disabled"} autocomplete="off" spellcheck="false">${notes.map(([nk,v])=>`<span class="n${nk==="Check amount"||nk==="Check reference"?"":" info"}">${esc(v)}</span>`).join("")}</label>`;
+}
+
+function renderOne(){
+  const it = items.find(i=>i.id===selId);
+  if (!it){ $("form").innerHTML = ""; $("pvImg").removeAttribute("src"); return; }
+  if ($("pvImg").dataset.id !== it.id){ $("pvImg").src = it.url; $("pvImg").dataset.id = it.id; $("imgwrap").scrollTop = 0; }
+  $("pvName").textContent = it.name;
+  const d = it.data||{}, done = it.state==="done";
+  $("pvBadge").innerHTML = done ? (needsCheck(it)?'<span class="badge warn">Check</span>':'<span class="badge ok">Looks good</span>') : it.state==="err" ? '<span class="badge bad">Failed</span>' : '<span class="badge">Reading…</span>';
+  const other = d.other||{};
+  const loose = Object.entries(other).filter(([k,v])=>v && !NOTE_FOR[k]);
+  const st = (d.status||"").toLowerCase();
+  const stCls = /fail|declin/.test(st) ? "bad" : /pend|process/.test(st) ? "warn" : st ? "ok" : "";
+  const meta = d._meta||{};
+  let html = `<div class="card hero${done&&!d.amount?" miss":""}" data-k="amount">
+      <div><div class="lbl" style="margin-bottom:2px">Amount</div>
+      <div class="amtbox"><span class="rs">₹</span><input data-k="amount" id="amtIn" inputmode="decimal" value="${esc(d.amount ? Number(d.amount).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}) : "")}" placeholder="${it.state==="run"?"reading…":"0.00"}"${done?"":" disabled"} autocomplete="off"></div></div>
+      <div class="meta" style="grid-column:auto;justify-content:flex-end">${d.status?`<span class="badge ${stCls}">${esc(d.status)}</span>`:""}${d.payment_mode?`<span class="badge">${esc(d.payment_mode)}</span>`:""}${d.app_or_source?`<span class="badge">${esc(d.app_or_source)}</span>`:""}</div>
+      ${other["Check amount"]?`<div class="alert">${esc(other["Check amount"])}</div>`: meta.fixedFrom ? `<div class="fixnote">✓ ₹ sign recognised from its shape (the reader saw “${esc(meta.fixedFrom)}”).</div>` : ""}
+      ${it.state==="err"?`<div class="alert">Could not read this snap: ${esc(it.err)}</div>`:""}
+    </div>`;
+  html += `<div class="groups">` + GROUPS.map(([title, ks, wide])=>`<div class="card grp${wide?" wide":""}"><h3>${esc(title)}</h3>${ks.map(k=>fieldHTML(it,k)).join("")}</div>`).join("") + `</div>`;
+  if (loose.length) html += `<div class="card grp"><h3>Notes</h3>${loose.map(([k,v])=>`<div class="fl"><span class="k">${esc(k)}</span><span class="n" style="font-size:13px">${esc(v)}</span></div>`).join("")}</div>`;
+  if (it.raw) html += `<details class="card raw"><summary>Text read from the image</summary><pre>${esc(it.raw)}</pre></details>`;
+  $("form").innerHTML = html;
+  $("form").querySelectorAll("input[data-k]").forEach(inp=>{
+    inp.oninput = ()=>{
+      if (inp.dataset.k==="amount"){ const n=parseFloat(inp.value.replace(/[^\d.]/g,"")); d.amount = isNaN(n)?"":n.toFixed(2); if (d.other) delete d.other["Check amount"]; }
+      else d[inp.dataset.k] = inp.value.trim();
+      renderQueue(); };
+    inp.onchange = ()=>{ if (inp.dataset.k==="amount"){ const n=parseFloat(inp.value.replace(/[^\d.]/g,"")); d.amount = isNaN(n)?"":n.toFixed(2); } renderOne(); };
+    inp.onfocus = ()=>showBox(it, inp.dataset.k);
+    inp.onblur = ()=>{ setTimeout(()=>{ if (!$("form").contains(document.activeElement)) showBox(it, "amount"); }, 50); };
+  });
+  showBox(it, "amount");
+}
+
+function locate(it, k){
+  const m = it.meta, d = it.data||{}; if (!m) return null;
+  if (k==="amount") return (d._meta||{}).amountBox || null;
+  const val = String(d[k]||""); if (val.length<3) return null;
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9@]/g,"");
+  const v = norm(val);
+  for (const L of m.lines) for (const w of L.words){ const t = norm(w.text||""); if (t.length>=4 && (t.includes(v) || (v.includes(t) && t.length>=6))) return w.bbox; }
+  const first = norm(val.split(/[\s/]+/)[0]);
+  if (first.length>=3) for (const L of m.lines) if (L.words.some(w=>norm(w.text||"")===first)) return L.bbox;
+  return null;
+}
+function showBox(it, k){
+  const box = $("hlBox"), b = locate(it, k), img = $("pvImg");
+  if (!b || !it.meta){ box.hidden = true; return; }
+  const W = it.meta.W, H = it.meta.H, pad = 6;
+  box.style.left = ((b.x0-pad)/W*100)+"%"; box.style.top = ((b.y0-pad)/H*100)+"%";
+  box.style.width = ((b.x1-b.x0+2*pad)/W*100)+"%"; box.style.height = ((b.y1-b.y0+2*pad)/H*100)+"%";
+  box.hidden = false;
+  const wrap = $("imgwrap"), y = (b.y0/H) * img.clientHeight;
+  if (y < wrap.scrollTop + 20 || y > wrap.scrollTop + wrap.clientHeight - 40) wrap.scrollTo({top: Math.max(0, y - wrap.clientHeight/3), behavior:"smooth"});
+}
+
+function render(){ renderQueue(); renderResult(); }
+function renderResult(){
+  $("viewOne").hidden = view!=="one"; $("viewAll").hidden = view!=="all"; $("viewTxt").hidden = view!=="txt";
+  if (view==="one") renderOne(); else if (view==="all") renderAll(); else renderText();
+}
+function setView(v){ view=v; [["tabOne","one"],["tabAll","all"],["tabTxt","txt"]].forEach(([id,x])=>$(id).setAttribute("aria-selected", v===x)); renderResult(); }
+$("tabOne").onclick=()=>setView("one"); $("tabAll").onclick=()=>setView("all"); $("tabTxt").onclick=()=>setView("txt");
+$("txtAll").onchange = renderText;
+
+/* ---- image preparation ----
+   Upscale small images, convert to grey, and flip light-on-dark areas (coloured headers, dark mode)
+   to dark-on-light, judged from the brightness around each pixel. */
 async function prep(file){
   const bmp = await createImageBitmap(file);
-  const scale = Math.min(2, 2400/Math.max(bmp.width,bmp.height)) || 1;
-  const c = document.createElement("canvas");
-  c.width = Math.round(bmp.width*Math.max(scale,1)); c.height = Math.round(bmp.height*Math.max(scale,1));
-  const x = c.getContext("2d"); x.imageSmoothingQuality = "high";
-  x.filter = "grayscale(1) contrast(1.15)"; x.drawImage(bmp,0,0,c.width,c.height);
-  // Dark screenshots (dark mode, coloured headers): also make a black-text-on-white copy
-  const img = x.getImageData(0,0,c.width,c.height), px = img.data;
-  let sum=0; for (let i=0;i<px.length;i+=16) sum+=px[i]; const mean = sum/(px.length/16);
-  let bw = null;
-  if (mean < 120){
-    bw = document.createElement("canvas"); bw.width=c.width; bw.height=c.height;
-    const out = new ImageData(c.width,c.height), o = out.data;
-    for (let i=0;i<px.length;i+=4){ const v = px[i] > 185 ? 0 : 255; o[i]=o[i+1]=o[i+2]=v; o[i+3]=255; }
-    bw.getContext("2d").putImageData(out,0,0);
+  let scale = 1;
+  if (bmp.width < 1100) scale = Math.min(3, 1500/bmp.width);
+  if (Math.max(bmp.width,bmp.height)*scale > 4200) scale = 4200/Math.max(bmp.width,bmp.height);
+  const W = Math.round(bmp.width*scale), H = Math.round(bmp.height*scale);
+  const c = document.createElement("canvas"); c.width=W; c.height=H;
+  const x = c.getContext("2d",{willReadFrequently:true}); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
+  x.drawImage(bmp,0,0,W,H); bmp.close && bmp.close();
+  const img = x.getImageData(0,0,W,H), p = img.data, N = W*H;
+  const g = new Uint8Array(N);
+  for (let i=0,j=0;j<N;i+=4,j++) g[j] = (p[i]*299 + p[i+1]*587 + p[i+2]*114)/1000;
+  // Background level per tile = the most common grey in and around it (text never dominates a 3x3 tile area)
+  const B = 32, bw = Math.ceil(W/B), bh = Math.ceil(H/B);
+  const hist = new Uint16Array(bw*bh*64);           // 64 grey bins per tile
+  for (let y=0;y<H;y+=2) for (let xx=0;xx<W;xx+=2) hist[(((y/B)|0)*bw + ((xx/B)|0))*64 + (g[y*W+xx]>>2)]++;
+  const bg = new Uint8Array(bw*bh), agg = new Uint32Array(64);
+  for (let by=0;by<bh;by++) for (let bx=0;bx<bw;bx++){
+    agg.fill(0);
+    for (let dy=-1;dy<=1;dy++) for (let dx=-1;dx<=1;dx++){
+      const yy=by+dy, xx=bx+dx; if (yy<0||yy>=bh||xx<0||xx>=bw) continue;
+      const w8 = (dx===0&&dy===0) ? 2 : 1, o=(yy*bw+xx)*64;
+      for (let k=0;k<64;k++) agg[k] += hist[o+k]*w8;
+    }
+    let best=0; for (let k=1;k<64;k++) if (agg[k]>agg[best]) best=k;
+    bg[by*bw+bx] = best*4+2;
   }
-  return {c, bw};
+  // Flip dark backgrounds, then divide by the background so every area becomes dark text on white
+  const out = new Uint8Array(N);
+  let inverted = 0;
+  for (let y=0;y<H;y++){
+    const row = ((y/B)|0)*bw;
+    for (let xx=0;xx<W;xx++){
+      const b0 = bg[row + ((xx/B)|0)];
+      let v = g[y*W+xx], b = b0;
+      if (b0 < 128){ v = 255-v; b = 255-b0; inverted++; }
+      let t = v / Math.max(b, 40); if (t>1) t=1;
+      out[y*W+xx] = Math.round(255*Math.pow(t, 1.6));
+    }
+  }
+  for (let j=0,i=0;j<N;j++,i+=4){ const v=out[j]; p[i]=p[i+1]=p[i+2]=v; p[i+3]=255; }
+  x.putImageData(img,0,0);
+  return {canvas:c, G:{g:out, w:W, h:H}, W, H, inverted: inverted/N};
+}
+
+function geoFrom(data){
+  const out=[];
+  for (const b of data.blocks||[]) for (const p of b.paragraphs||[]) for (const l of p.lines||[]){
+    const words = (l.words||[]).filter(w=>(w.text||"").trim()).map(w=>({text:w.text, conf:w.confidence, bbox:w.bbox, h:w.bbox.y1-w.bbox.y0,
+      symbols:(w.symbols||[]).map(s=>({text:s.text, bbox:s.bbox, conf:s.confidence}))}));
+    if (words.length) out.push({text:(l.text||"").trim(), bbox:l.bbox, words});
+  }
+  return out;
 }
 
 let ocrWorker = null;
 async function getOcr(){
   if (!window.Tesseract) throw new Error("The text reader didn't load. Check your internet connection and reload the page.");
-  if (!ocrWorker) ocrWorker = Tesseract.createWorker("eng").catch(e=>{ ocrWorker=null; throw e; });
+  if (!ocrWorker) ocrWorker = Tesseract.createWorker("eng", 1, {
+    logger: m => { if (current && m.status==="recognizing text"){ current.progress = (current.pass||0)*0.5 + m.progress*(current.passes===1?1:0.5); const bar = document.querySelector(`.qi[data-id="${current.id}"] .bar i`); if (bar) bar.style.width = Math.round(Math.min(1,current.progress)*100)+"%"; } }
+  }).then(async w=>{ await w.setParameters({ user_defined_dpi:"300", preserve_interword_spaces:"1" }); return w; })
+    .catch(e=>{ ocrWorker=null; throw e; });
   return ocrWorker;
 }
 async function readOne(it){
-  it.state="run"; it.err=""; render();
+  it.state="run"; it.err=""; it.progress=0; current=it; render();
   try{
     status(ocrWorker ? "Reading " + it.name + "…" : "Loading the text reader (first time takes a few seconds)…");
     const w = await getOcr();
     status("Reading " + it.name + "…");
-    const {c, bw} = await prep(it.file);
-    const { data } = await w.recognize(c);
-    let text = (data.text||"").trim();
-    if (bw){
+    const P = await prep(it.file);
+    it.passes = 2; it.pass = 0;
+    await w.setParameters({ tessedit_pageseg_mode: "3" });
+    const r1 = (await w.recognize(P.canvas, {}, {text:true, blocks:true})).data;
+    let raw = (r1.text||"").trim(), geo = geoFrom(r1);
+    let d = parsePayment(raw, null, geo, P.G);
+    // Second look in "sparse text" mode when key details are missing or the read was shaky
+    if (!d.amount || (!d.reference_no && !d.transaction_id) || (r1.confidence||0) < 75 || (d.other||{})["Check amount"]){
+      it.pass = 1;
       await w.setParameters({ tessedit_pageseg_mode: "11" });
-      try { const r2 = await w.recognize(bw); text += "\n" + (r2.data.text||"").trim(); }
-      finally { await w.setParameters({ tessedit_pageseg_mode: "3" }); }
+      try{
+        const r2 = (await w.recognize(P.canvas, {}, {text:true, blocks:true})).data;
+        const raw2 = raw + "\n" + (r2.text||"").trim(), geo2 = geo.concat(geoFrom(r2));
+        const d2 = parsePayment(raw2, null, geo2, P.G);
+        const filled = o => FIELDS.filter(([k])=>o[k]).length - ((o.other||{})["Check amount"]?2:0);
+        if (filled(d2) >= filled(d)){ d = d2; raw = raw2; geo = geo2; }
+      } finally { await w.setParameters({ tessedit_pageseg_mode: "3" }); }
     }
-    it.raw = text.trim();
-
+    it.raw = raw; it.meta = {lines:geo, W:P.W, H:P.H};
     if (!it.raw) throw new Error("No text found. Try a clearer or uncropped screenshot.");
-    it.data = parsePayment(it.raw);
-    if (!it.data.amount && !it.data.reference_no && !it.data.transaction_id) it.data.other = Object.assign({"Check":"Couldn't find amount or reference. Is this a payment screenshot?"}, it.data.other);
-    it.state="done";
+    if (!d.amount && !d.reference_no && !d.transaction_id) d.other = Object.assign({"Check":"Couldn't find an amount or reference. Is this a payment screenshot?"}, d.other);
+    it.data = d; it.state="done";
   }catch(e){ it.state="err"; it.err = e?.message || "Reading failed."; }
+  current = null;
   if (!items.includes(it)) return;
   render();
 }
 async function readAll(){
   if (busy) return; busy = true; render();
-  try{ let it; while ((it = items.find(i=>i.state==="wait"))){ if (view==="one") selId = it.id; await readOne(it); } }
+  try{ let it; while ((it = items.find(i=>i.state==="wait"))){ await readOne(it); } }
   finally { busy = false; }
-  const bad = items.filter(i=>i.state==="err").length, done = doneItems().length;
-  status(bad ? `${bad} failed: ${items.find(i=>i.state==="err").err}` : done>1 ? `${done} snaps read. See “All snaps” or download Excel.` : "Done. Check the highlighted fields.", !!bad);
+  const bad = items.filter(i=>i.state==="err").length, done = doneItems().length, chk = items.filter(needsCheck).length;
+  status(bad ? `${bad} couldn't be read.` : chk ? `${done} read · ${chk} need a check (amber).` : `${done} read. All look good.`, !!bad);
   render();
 }
 function addFiles(files){
   const imgs = [...files].filter(f=>/^image\//.test(f.type));
-  if (!imgs.length){ status("Those files aren't images. Use JPG, PNG or WebP screenshots.", true); return; }
-  for (const f of imgs){ const id=Math.random().toString(36).slice(2); items.push({id,name:f.name||"pasted-image.png",file:f,url:URL.createObjectURL(f),state:"wait",data:null}); if (view==="one") selId=id; }
+  if (!imgs.length){ toast("Those files aren't images. Use JPG, PNG or WebP screenshots."); return; }
+  let first = null;
+  for (const f of imgs){ const id=Math.random().toString(36).slice(2); items.push({id,name:f.name||"pasted-image.png",file:f,url:URL.createObjectURL(f),state:"wait",data:null}); first = first || id; }
+  if (!selId || view!=="one") selId = first; else if (!items.find(i=>i.id===selId)) selId = first;
+  if (items.length===imgs.length) selId = first;
   render(); readAll();
 }
 $("readBtn").onclick = ()=>{ items.forEach(i=>{ if(i.state==="err") i.state="wait"; }); readAll(); };
-$("clearBtn").onclick = ()=>{ if (busy) return; items.forEach(i=>URL.revokeObjectURL(i.url)); items=[]; selId=null; status(""); render(); };
+$("clearBtn").onclick = ()=>{ if (busy) return; if (items.length>1 && !confirm(`Remove all ${items.length} snaps?`)) return; items.forEach(i=>URL.revokeObjectURL(i.url)); items=[]; selId=null; status(""); render(); };
 const drop=$("drop"), fi=$("file");
 drop.onclick=()=>fi.click();
 drop.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); fi.click(); } };
 fi.onchange=()=>{ addFiles(fi.files); fi.value=""; };
-["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add("over")}));
-["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove("over")}));
-drop.addEventListener("drop",e=>addFiles(e.dataTransfer.files));
+let dragDepth=0;
+window.addEventListener("dragenter",e=>{ if ([...(e.dataTransfer?.types||[])].includes("Files")){ e.preventDefault(); dragDepth++; drop.classList.add("over"); } });
+window.addEventListener("dragover",e=>{ if ([...(e.dataTransfer?.types||[])].includes("Files")) e.preventDefault(); });
+window.addEventListener("dragleave",()=>{ if (--dragDepth<=0){ dragDepth=0; drop.classList.remove("over"); } });
+window.addEventListener("drop",e=>{ e.preventDefault(); dragDepth=0; drop.classList.remove("over"); if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); });
 document.addEventListener("paste",e=>{ const fs=[...(e.clipboardData?.items||[])].filter(i=>i.kind==="file").map(i=>i.getAsFile()).filter(Boolean); if(fs.length){ e.preventDefault(); addFiles(fs); } });
 
-function note(msg){ $("actNote").textContent=msg; setTimeout(()=>$("actNote").textContent="",3000); }
+$("themeBtn").onclick = ()=>{ const t = document.documentElement.dataset.theme==="dark" ? "light" : "dark"; document.documentElement.dataset.theme = t; try{ localStorage.setItem("psr-theme", t); }catch(e){} };
+
 function saveBlob(blob, name){
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000);
@@ -605,29 +940,24 @@ function saveBlob(blob, name){
 $("copyBtn").onclick = async ()=>{
   const t=$("txt"); if(!t.value) return;
   try{ await navigator.clipboard.writeText(t.value); }catch{ t.focus(); t.select(); document.execCommand && document.execCommand("copy"); }
-  note("Copied");
+  toast("Copied to clipboard");
 };
 $("dlBtn").onclick = ()=>{
   const text=$("txt").value; if(!text) return;
   const it = items.find(i=>i.id===selId);
-  const base = view==="all" ? "payment-snaps" : "payment-"+(it?.data?.reference_no || it?.data?.transaction_id || it?.name?.replace(/\.[^.]+$/,"") || "snap");
+  const base = $("txtAll").checked ? "payment-snaps" : "payment-"+(it?.data?.reference_no || it?.data?.transaction_id || it?.name?.replace(/\.[^.]+$/,"") || "snap");
   saveBlob(new Blob([text.replace(/\n/g,"\r\n")],{type:"text/plain"}), base.replace(/[^\w.-]+/g,"_")+".txt");
-  note("Saved to Downloads");
+  toast("Saved to Downloads");
 };
 $("xlsBtn").onclick = ()=>{
   const rows = doneItems(); if (!rows.length) return;
-  if (!window.XLSX){ status("The Excel maker didn't load. Check your internet connection and reload the page.", true); return; }
+  if (!window.XLSX){ toast("The Excel maker didn't load. Check your connection and reload."); return; }
   const header = ["Sl No.","File Name",...FIELDS.map(f=>f[1]),"Notes"];
   const data = rows.map((it,i)=>{
     const d = it.data;
-    return [i+1, it.name, ...FIELDS.map(([k])=>{
-      const v = d[k]||"";
-      if (k==="amount" && v!=="" && !isNaN(+v)) return +v;
-      return v;
-    }), noteText(d)];
+    return [i+1, it.name, ...FIELDS.map(([k])=>{ const v = d[k]||""; if (k==="amount" && v!=="" && !isNaN(+v)) return +v; return v; }), noteText(d)];
   });
   const ws = XLSX.utils.aoa_to_sheet([header, ...data]);
-  // keep long IDs as text so Excel doesn't turn them into 7.93E+11
   const idCols = ["reference_no","transaction_id","payer_account"].map(k=>2+FIELDS.findIndex(f=>f[0]===k));
   data.forEach((r,ri)=>idCols.forEach(ci=>{ const ref = XLSX.utils.encode_cell({r:ri+1,c:ci}); if (ws[ref]) { ws[ref].t="s"; ws[ref].v=String(ws[ref].v); } }));
   const amtCol = 2+FIELDS.findIndex(f=>f[0]==="amount");
@@ -635,12 +965,11 @@ $("xlsBtn").onclick = ()=>{
   ws["!cols"] = header.map((h,ci)=>({wch: Math.min(45, Math.max(h.length, ...data.map(r=>String(r[ci]??"").length)) + 2)}));
   ws["!autofilter"] = {ref: XLSX.utils.encode_range({s:{r:0,c:0},e:{r:data.length,c:header.length-1}})};
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Payment Snaps");
-  const stamp = new Date(); const p = n=>String(n).padStart(2,"0");
-  XLSX.writeFile(wb, `payment-snaps-${stamp.getFullYear()}${p(stamp.getMonth()+1)}${p(stamp.getDate())}-${p(stamp.getHours())}${p(stamp.getMinutes())}.xlsx`);
-  status(`Excel saved with ${rows.length} snap${rows.length>1?"s":""}.`);
+  const s = new Date(), p = n=>String(n).padStart(2,"0");
+  XLSX.writeFile(wb, `payment-snaps-${s.getFullYear()}${p(s.getMonth()+1)}${p(s.getDate())}-${p(s.getHours())}${p(s.getMinutes())}.xlsx`);
+  toast(`Excel saved · ${rows.length} snap${rows.length>1?"s":""}`);
 };
 render();
 </script>
-
 </body>
 </html>
